@@ -1,0 +1,4 @@
+Las fuentes Barlow y Big Shoulders Display (src/assets/fonts) se distribuyen bajo la licencia
+SIL Open Font License 1.1 (https://openfontlicense.org), que permite su uso y alojamiento propio.
+- Barlow: Jeremy Tribby (https://github.com/jpt/barlow)
+- Big Shoulders Display: Patric King / Chicago Design Studio (https://github.com/xotypeco/big_shoulders)
