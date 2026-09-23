@@ -3,7 +3,7 @@
 import { chip, icon } from './components.js';
 import { h } from './dom.js';
 
-/** Fila de una lista (trabajador, proveedor, subcontrata, obra...): nombre + subtítulo + estado. */
+/** Fila de una lista (trabajador, proveedor, banco, obra...): nombre + subtítulo + estado. */
 export function listItem({ href, title, subtitle, active = true, iconName = 'file' }) {
   return h(
     'a',

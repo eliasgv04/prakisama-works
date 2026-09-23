@@ -1,12 +1,11 @@
-// Ficha de la obra: datos e importe, checklist de hitos con adjuntos, proveedores y subcontratas
-// asignados (con si han mandado su documentación) y certificaciones.
+// Ficha de la obra: datos e importe, checklist de hitos con adjuntos, proveedores asignados
+// (con si han mandado su documentación) y certificaciones.
 
 import { MILESTONE_KINDS } from '../lib/constants.js';
 import {
   addBankProduct,
   addCertification,
   addProjectProvider,
-  addProjectSubcontractor,
   deleteAttachment,
   deleteBankProduct,
   deleteCertification,
@@ -15,14 +14,12 @@ import {
   listBankProductsByProject,
   listMilestoneAttachments,
   listProviders,
-  listSubcontractors,
   removeProjectProvider,
-  removeProjectSubcontractor,
   saveMilestone,
   uploadMilestoneAttachment,
   updateBankProduct,
   updateCertification,
-  updateProjectSubcontractor,
+  updateProjectProvider,
 } from '../lib/api.js';
 import { dueStatus } from '../lib/dueStatus.js';
 import { friendlyError } from '../lib/errors.js';
@@ -43,7 +40,7 @@ export default async function projectDetail({ params }) {
   const node = h('div', { class: 'detail-grid' }, left, right);
 
   left.append(heroCard(project), milestonesCard(project, data.milestones), avalCard(project, avales, banks));
-  right.append(providersCard(project, data.providers), subcontractorsCard(project, data.subcontractors), certificationsCard(project, data.certifications));
+  right.append(providersCard(project, data.providers), certificationsCard(project, data.certifications));
   right.append(h('div', { class: 'spacer' }), button('Editar obra', { variant: 'ghost', block: true, iconName: 'edit', onClick: () => navigate(`/obras/${project.id}/editar`) }));
 
   return { title: project.name, hideTitle: true, wide: true, back: '/obras', tab: 'obras', node };
@@ -290,7 +287,7 @@ function openAvalSheet(project, banks, avales, onSaved, existing = null) {
 }
 
 // ---------------------------------------------------------------------------
-// Proveedores asignados
+// Proveedores asignados: además, si han mandado su documentación
 // ---------------------------------------------------------------------------
 
 function providersCard(project, rows) {
@@ -300,6 +297,7 @@ function providersCard(project, rows) {
     list.replaceChildren();
     if (rows.length === 0) list.append(h('p', { class: 'muted' }, 'Sin proveedores asignados.'));
     for (const row of rows) {
+      const docChip = chip(row.documentation_received ? 'Documentación recibida' : 'Documentación pendiente', row.documentation_received ? 'ok' : 'soon');
       list.append(
         h(
           'div',
@@ -317,6 +315,27 @@ function providersCard(project, rows) {
                 toast(friendlyError(err), 'error');
               }
             } }, icon('x', 18)),
+          ),
+          h('div', { style: 'margin-top:6px' }, docChip),
+          h(
+            'label',
+            { class: 'check', style: 'margin-top:8px' },
+            h('input', {
+              type: 'checkbox',
+              checked: row.documentation_received,
+              onchange: async (event) => {
+                const checked = event.target.checked;
+                try {
+                  const updated = await updateProjectProvider(row.id, { documentation_received: checked, documentation_received_on: checked ? todayISO() : null });
+                  Object.assign(row, updated);
+                  render();
+                } catch (err) {
+                  event.target.checked = !checked;
+                  toast(friendlyError(err), 'error');
+                }
+              },
+            }),
+            'Ha mandado la documentación',
           ),
         ),
       );
@@ -345,100 +364,6 @@ function openAddProviderSheet(project, rows, onAdded) {
             save.disabled = true;
             try {
               const row = await addProjectProvider(project.id, readForm(event.target).provider_id);
-              rows.push(row);
-              onAdded();
-              close(true);
-            } catch (err) {
-              toast(friendlyError(err), 'error');
-              save.disabled = false;
-            }
-          },
-        },
-        select,
-        save,
-      );
-    })(),
-  );
-}
-
-// ---------------------------------------------------------------------------
-// Subcontratas asignadas: además, si han mandado su documentación
-// ---------------------------------------------------------------------------
-
-function subcontractorsCard(project, rows) {
-  const card = h('div', { class: 'card' });
-  const list = h('div', { class: 'stack tight' });
-  function render() {
-    list.replaceChildren();
-    if (rows.length === 0) list.append(h('p', { class: 'muted' }, 'Sin subcontratas asignadas.'));
-    for (const row of rows) {
-      const docChip = chip(row.documentation_received ? 'Documentación recibida' : 'Documentación pendiente', row.documentation_received ? 'ok' : 'soon');
-      list.append(
-        h(
-          'div',
-          { class: 'record' },
-          h(
-            'div',
-            { class: 'head' },
-            h('span', { class: 'strong' }, row.subcontractor?.name ?? '(eliminada)'),
-            h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Quitar', onclick: async () => {
-              try {
-                await removeProjectSubcontractor(row.id);
-                rows.splice(rows.indexOf(row), 1);
-                render();
-              } catch (err) {
-                toast(friendlyError(err), 'error');
-              }
-            } }, icon('x', 18)),
-          ),
-          h('div', { style: 'margin-top:6px' }, docChip),
-          h(
-            'label',
-            { class: 'check', style: 'margin-top:8px' },
-            h('input', {
-              type: 'checkbox',
-              checked: row.documentation_received,
-              onchange: async (event) => {
-                const checked = event.target.checked;
-                try {
-                  const updated = await updateProjectSubcontractor(row.id, { documentation_received: checked, documentation_received_on: checked ? todayISO() : null });
-                  Object.assign(row, updated);
-                  render();
-                } catch (err) {
-                  event.target.checked = !checked;
-                  toast(friendlyError(err), 'error');
-                }
-              },
-            }),
-            'Ha mandado la documentación',
-          ),
-        ),
-      );
-    }
-  }
-  render();
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir subcontrata', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openAddSubcontractorSheet(project, rows, render) })));
-  return section('Subcontratas', card);
-}
-
-function openAddSubcontractorSheet(project, rows, onAdded) {
-  return openSheet('Añadir subcontrata', (close) =>
-    (async () => {
-      const all = await listSubcontractors();
-      const assigned = new Set(rows.map((r) => r.subcontractor_id));
-      const options = all.filter((s) => s.active && !assigned.has(s.id)).map((s) => [s.id, s.name]);
-      if (options.length === 0) return h('p', { class: 'muted' }, 'No quedan subcontratas activas por asignar.');
-      const select = selectField('Subcontrata', 'subcontractor_id', options);
-      const save = button('Añadir', { type: 'submit', block: true, iconName: 'check' });
-      return h(
-        'form',
-        {
-          class: 'stack',
-          onsubmit: async (event) => {
-            event.preventDefault();
-            save.disabled = true;
-            try {
-              const row = await addProjectSubcontractor(project.id, readForm(event.target).subcontractor_id);
               rows.push(row);
               onAdded();
               close(true);

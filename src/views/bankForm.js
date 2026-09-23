@@ -10,6 +10,7 @@ const { form } = makeEntityViews({
   iconName: 'euro',
   tab: 'finanzas',
   listBack: null,
+  hasDetail: true, // /bancos/:id es la ficha (bankDetail.js), /bancos/:id/editar es este formulario
   nameField: 'name',
   nameLabel: 'Nombre',
   fields: [

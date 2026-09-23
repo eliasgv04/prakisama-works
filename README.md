@@ -1,6 +1,6 @@
 # Prakisama Works
 
-App web instalable (PWA) para controlar las **obras** de Prakisama: personal (con reconocimiento médico, formación y vacaciones), proveedores, subcontratas, bancos y sus productos, importe, documentación (checklist de hitos), aval, certificaciones y parte de horas. Pensada para usarse desde el móvil.
+App web instalable (PWA) para controlar las **obras** de Prakisama: personal (con reconocimiento médico, formación y vacaciones), proveedores, bancos y sus productos, importe, documentación (checklist de hitos), aval, certificaciones y parte de horas. Pensada para usarse desde el móvil.
 
 - **Frontend:** JavaScript vanilla (ES modules) + Vite. Única dependencia de runtime: `@supabase/supabase-js`.
 - **Backend:** Supabase (Postgres, Auth, Storage). Sin Edge Functions ni pg_cron: esta app no envía avisos ni emails, solo semáforo visual dentro de la app.
@@ -77,16 +77,16 @@ Ya desplegado en Vercel, enlazado con el repositorio de GitHub. Para otra person
 
 ## 7. Cómo funciona
 
-- **Trabajadores, proveedores, subcontratas, bancos y obras** son listas maestras con "Dar de baja" (`active=false`, reversible) y también "Eliminar" (borrado real). Si el registro tiene historial de verdad detrás (horas, asignación a una obra), el borrado falla solo y hay que darlo de baja en su lugar; borrar un banco sí borra en cascada sus productos. Trabajadores/proveedores/subcontratas/bancos se eligen desde un desplegable al asignarlos a una obra, al parte de horas o a un producto bancario: no hace falta volver a escribir nombres.
+- **Trabajadores, proveedores, bancos y obras** son listas maestras con "Dar de baja" (`active=false`, reversible) y también "Eliminar" (borrado real). Si el registro tiene historial de verdad detrás (horas, asignación a una obra), el borrado falla solo y hay que darlo de baja en su lugar; borrar un banco sí borra en cascada sus productos. Trabajadores/proveedores/bancos se eligen desde un desplegable al asignarlos a una obra, al parte de horas o a un producto bancario: no hace falta volver a escribir nombres.
 - **Reconocimiento médico, formación y vacaciones** (de cada trabajador) y **productos bancarios** (de cada banco) son historiales propios. El reconocimiento médico y los productos bancarios tienen **semáforo** (ok / próximo / vencido, 30 días de antelación fija) visible en su ficha, en su lista y en el panel — sin email, solo dentro de la app. Formación y vacaciones son solo historial, sin semáforo.
 - **Importe de la obra**: se pone la base imponible y el % de IVA; el total lo calcula Postgres solo (columna generada), nunca se escribe a mano.
 - **Documentación de la obra**: checklist fijo de 7 hitos (contrato, plan de seguridad, acta de aprobación, comunicación de apertura, libro de subcontratación, acta de replanteo, recepción de obra). Cada uno se marca con la fecha en que se hizo (vacía = pendiente) y admite un adjunto (PDF o foto). Sin plazos ni avisos: es solo un estado de la obra.
 - **Aval**: no es un hito suelto, es un producto bancario (banco, importe, fin del periodo de garantía, solicitud de devolución) vinculado a la obra. Se ve y se da de alta igual desde la ficha de la obra ("Aval") o desde la ficha del banco ("Añadir producto" → obra relacionada).
-- **Subcontratas de la obra**: además de asignarlas, se marca si han mandado su documentación (con fecha).
+- **Proveedores de la obra**: además de asignarlos, se marca si han mandado su documentación (con fecha) — útil sobre todo para los que trabajan como subcontrata en esa obra (no hay una lista separada de "subcontratas": todo son proveedores).
 - **Certificaciones**: fecha, importe y fecha de cobro (vacía = pendiente de cobro).
 - **Parte de horas**: qué trabajador hizo cuántas horas en qué obra, cada día. La pantalla "Horas" navega día a día como una agenda.
 - **Panel**: centrado en los vencimientos (reconocimiento médico + productos bancarios/avales), ordenados por urgencia, con tarjetas semáforo que filtran la lista. Las certificaciones sin cobrar van aparte, debajo.
-- **Alta con todo de una vez**: al crear un trabajador o una obra nueva se puede rellenar ya todo lo que normalmente cuelga de su ficha (reconocimiento médico/formación/vacaciones; hitos/aval/proveedores/subcontratas/certificaciones) aunque el registro todavía no exista — se manda en cuanto se guarda.
+- **Alta con todo de una vez**: al crear un trabajador o una obra nueva se puede rellenar ya todo lo que normalmente cuelga de su ficha (reconocimiento médico/formación/vacaciones; hitos/aval/proveedores/certificaciones) aunque el registro todavía no exista — se manda en cuanto se guarda.
 - Todas las fechas se tratan como cadenas `YYYY-MM-DD` (nunca `Date` local) para no arrastrar errores de zona horaria — ver `src/lib/dates.js`.
 
 ## 8. Problemas frecuentes
@@ -95,7 +95,7 @@ Ya desplegado en Vercel, enlazado con el repositorio de GitHub. Para otra person
 |---|---|
 | "Falta la configuración de Supabase" al abrir la app | No existe `.env` o le faltan las variables (sección 3). |
 | Email o contraseña incorrectos al entrar | Revisa que el usuario esté dado de alta en Supabase Auth y con la cuenta activa en `profiles`. |
-| "No tienes permiso para hacer esto" | Casi siempre RLS: la cuenta no está activa, o se intenta borrar algo con baja lógica (trabajador, proveedor, subcontrata, banco u obra) en vez de darlo de baja. |
+| "No tienes permiso para hacer esto" | Casi siempre RLS: la cuenta no está activa, o se intenta borrar algo con baja lógica (trabajador, proveedor, banco u obra) en vez de darlo de baja. |
 | Una obra nueva no muestra los 7 hitos | El trigger `seed_project_milestones` los siembra al crear la obra; si faltan, revisa que la migración 1 se haya aplicado entera. |
 | Tras `git push` no se actualiza la web | Comprueba que el repositorio esté enlazado (`vercel git connect`) y mira el build en el dashboard de Vercel. |
 
@@ -111,5 +111,5 @@ src/                  frontend (JS vanilla, ES modules)
   ui/                  helpers DOM, componentes de interfaz y el patrón de "staging" (alta con todo)
   views/               una pantalla por archivo
 supabase/
-  migrations/          esquema versionado (1 esquema, 2 RLS, 3 storage, 4 personal, 5 finanzas, 6 aval)
+  migrations/          esquema versionado (1 esquema, 2 RLS, 3 storage, 4 personal, 5 finanzas, 6 aval, 7-10 ajustes menores y quitar subcontratas)
 ```

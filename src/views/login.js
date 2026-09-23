@@ -57,7 +57,7 @@ export default async function login() {
     ),
   );
 
-  const node = h('div', { class: 'login' }, ...brandHeader('Prakisama Works', 'Obras, trabajadores, proveedores y subcontratas de Prakisama.'), session.blocked ? banner(session.blocked, 'error') : null, form);
+  const node = h('div', { class: 'login' }, ...brandHeader('Prakisama Works', 'Obras, trabajadores, proveedores y bancos de Prakisama.'), session.blocked ? banner(session.blocked, 'error') : null, form);
   return { title: 'Acceso', node, bare: true };
 }
 

@@ -1,6 +1,5 @@
-// Fábrica de pantallas para las listas maestras (trabajadores, proveedores, subcontratas): las tres
-// son "nombre + un puñado de datos de contacto + notas + baja lógica", así que comparten una única
-// pantalla de lista y una de formulario en vez de triplicar el mismo código.
+// Fábrica de pantallas para listas maestras "nombre + un puñado de datos de contacto + notas +
+// baja lógica" (proveedores, bancos), para no duplicar el mismo código en cada una.
 
 import { friendlyError } from '../lib/errors.js';
 import { navigate } from '../router.js';
@@ -24,6 +23,10 @@ import { confirmDialog, h, toast } from '../ui/dom.js';
  * @param {string} [cfg.deleteWarning]  mensaje del diálogo de confirmación al eliminar (por defecto, avisa de que si tiene algo asignado no se podrá)
  * @param {string} [cfg.tab]      pestaña activa en la barra (por defecto "listas")
  * @param {string|null} [cfg.listBack]  flecha "volver" de la lista (por defecto "/listas"; null = sin flecha, es una pestaña de nivel superior)
+ * @param {boolean} [cfg.hasDetail]  true si `${route}/:id` es una ficha aparte del formulario de edición
+ *   (como bancos, con `:id/editar` propio). Si es false (por defecto: proveedores no lo usan así,
+ *   `${route}/:id` YA es el formulario), "volver" al editar no puede apuntar a `${route}/:id` —
+ *   sería la misma página en la que ya estás, y navigate() no haría nada.
  */
 export function makeEntityViews(cfg) {
   const tab = cfg.tab ?? 'listas';
@@ -162,7 +165,8 @@ export function makeEntityViews(cfg) {
       );
     }
 
-    return { title: editing ? `Editar ${cfg.singular}` : `Nuevo ${cfg.singular}`, back: editing ? `${cfg.route}/${params.id}` : cfg.route, tab, node };
+    const editBack = cfg.hasDetail ? `${cfg.route}/${params.id}` : cfg.route;
+    return { title: editing ? `Editar ${cfg.singular}` : `Nuevo ${cfg.singular}`, back: editing ? editBack : cfg.route, tab, node };
   }
 
   return { list, form };

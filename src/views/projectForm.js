@@ -1,5 +1,5 @@
 // Alta y edición de una obra. Al crear una obra nueva, también se puede rellenar de una vez su
-// checklist de hitos, su aval, sus proveedores/subcontratas y sus primeras certificaciones: como la
+// checklist de hitos, su aval, sus proveedores y sus primeras certificaciones: como la
 // obra todavía no existe, se guardan en memoria ("staged") y se mandan justo después de crearla.
 // Al editar una obra ya existente, todo eso se gestiona desde su ficha.
 
@@ -8,13 +8,11 @@ import {
   addBankProduct,
   addCertification,
   addProjectProvider,
-  addProjectSubcontractor,
   deleteProject,
   getProject,
   listBanks,
   listProjects,
   listProviders,
-  listSubcontractors,
   saveMilestone,
   saveProject,
   setProjectActive,
@@ -68,7 +66,7 @@ export default async function projectForm({ params }) {
   });
 
   if (editing) {
-    // Edición: formulario simple. Hitos, aval, proveedores/subcontratas y certificaciones se
+    // Edición: formulario simple. Hitos, aval, proveedores y certificaciones se
     // gestionan desde la ficha (ya tienen su propio historial con adjuntos y borrado).
     const save = button('Guardar', { type: 'submit', block: true, iconName: 'check' });
     const form = h(
@@ -129,7 +127,7 @@ export default async function projectForm({ params }) {
         onClick: async () => {
           const ok = await confirmDialog({
             title: '¿Eliminar esta obra?',
-            message: 'Se borra de verdad (con sus hitos, certificaciones y asignaciones de proveedores/subcontratas), no se puede deshacer. Un aval vinculado se queda en el banco, sin obra. Si tiene horas registradas, no se podrá borrar: da de baja en ese caso.',
+            message: 'Se borra de verdad (con sus hitos, certificaciones y asignaciones de proveedores), no se puede deshacer. Un aval vinculado se queda en el banco, sin obra. Si tiene horas registradas, no se podrá borrar: da de baja en ese caso.',
             confirmText: 'Eliminar',
             danger: true,
           });
@@ -147,13 +145,12 @@ export default async function projectForm({ params }) {
     return { title: 'Editar obra', back: `/obras/${params.id}`, tab: 'obras', node };
   }
 
-  // --- Alta: datos básicos + hitos / aval / proveedores / subcontratas / certificaciones "en preparación" ---
-  const [banks, providers, subcontractors] = await Promise.all([listBanks(), listProviders(), listSubcontractors()]);
+  // --- Alta: datos básicos + hitos / aval / proveedores / certificaciones "en preparación" ---
+  const [banks, providers] = await Promise.all([listBanks(), listProviders()]);
 
   const stagedMilestones = Object.fromEntries(Object.keys(MILESTONE_KINDS).map((kind) => [kind, { done_date: '', notes: '', file: null }]));
   const stagedAval = [];
   const stagedProviderIds = [];
-  const stagedSubcontractorIds = [];
   const stagedCertifications = [];
 
   const milestonesEl = stagedMilestonesCard(stagedMilestones);
@@ -170,13 +167,6 @@ export default async function projectForm({ params }) {
     stagedProviderIds,
     (id, remove) => removableRow(providers.find((x) => x.id === id)?.name ?? '(proveedor)', null, remove),
     () => openStagedPickSheet('Añadir proveedor', 'Proveedor', providers.filter((x) => x.active && !stagedProviderIds.includes(x.id)), stagedProviderIds, providersCardEl.render, 'No quedan proveedores activos por añadir.'),
-  );
-
-  const subcontractorsCardEl = stagedSection(
-    'Añadir subcontrata',
-    stagedSubcontractorIds,
-    (id, remove) => removableRow(subcontractors.find((x) => x.id === id)?.name ?? '(subcontrata)', null, remove),
-    () => openStagedPickSheet('Añadir subcontrata', 'Subcontrata', subcontractors.filter((x) => x.active && !stagedSubcontractorIds.includes(x.id)), stagedSubcontractorIds, subcontractorsCardEl.render, 'No quedan subcontratas activas por añadir.'),
   );
 
   const certificationsCardEl = stagedSection(
@@ -229,13 +219,6 @@ export default async function projectForm({ params }) {
           failures.push('un proveedor');
         }
       }
-      for (const subcontractorId of stagedSubcontractorIds) {
-        try {
-          await addProjectSubcontractor(saved.id, subcontractorId);
-        } catch {
-          failures.push('una subcontrata');
-        }
-      }
       for (const c of stagedCertifications) {
         try {
           await addCertification(saved.id, c);
@@ -259,7 +242,6 @@ export default async function projectForm({ params }) {
     section('Hitos y documentación (opcional)', milestonesEl),
     section('Aval (opcional)', avalCard.el),
     section('Proveedores (opcional)', providersCardEl.el),
-    section('Subcontratas (opcional)', subcontractorsCardEl.el),
     section('Certificaciones (opcional)', certificationsCardEl.el),
     h('div', { class: 'spacer' }),
     save,
@@ -312,7 +294,7 @@ function stagedMilestoneRow(kind, state) {
 }
 
 // ---------------------------------------------------------------------------
-// Aval, proveedores/subcontratas y certificaciones "en preparación"
+// Aval, proveedores y certificaciones "en preparación"
 // ---------------------------------------------------------------------------
 
 function openStagedAvalSheet(banks, list, onAdded) {
@@ -351,7 +333,7 @@ function openStagedAvalSheet(banks, list, onAdded) {
   });
 }
 
-/** Sheet genérica para elegir un proveedor o una subcontrata de una lista y añadir su id a `staged`. */
+/** Sheet genérica para elegir un proveedor de una lista y añadir su id a `staged`. */
 function openStagedPickSheet(title, fieldLabel, options, staged, onAdded, emptyMessage) {
   return openSheet(title, (close) => {
     if (options.length === 0) return h('p', { class: 'muted' }, emptyMessage);

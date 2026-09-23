@@ -1,11 +1,11 @@
-// Portada de las listas maestras: trabajadores, proveedores y subcontratas.
+// Portada de las listas maestras: trabajadores y proveedores.
 
-import { listProviders, listSubcontractors, listWorkers } from '../lib/api.js';
+import { listProviders, listWorkers } from '../lib/api.js';
 import { icon } from '../ui/components.js';
 import { h } from '../ui/dom.js';
 
 export default async function listas() {
-  const [workers, providers, subcontractors] = await Promise.all([listWorkers(), listProviders(), listSubcontractors()]);
+  const [workers, providers] = await Promise.all([listWorkers(), listProviders()]);
 
   const row = (href, iconName, title, list) => {
     const active = list.filter((x) => x.active).length;
@@ -23,7 +23,6 @@ export default async function listas() {
     { class: 'stack' },
     row('#/trabajadores', 'users', 'Trabajadores', workers),
     row('#/proveedores', 'truck', 'Proveedores', providers),
-    row('#/subcontratas', 'wrench', 'Subcontratas', subcontractors),
   );
 
   return { title: 'Listas', node, tab: 'listas' };

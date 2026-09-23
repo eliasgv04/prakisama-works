@@ -9,7 +9,6 @@ import { providerForm, providersList } from './views/providers.js';
 import projectDetail from './views/projectDetail.js';
 import projectForm from './views/projectForm.js';
 import projectsList from './views/projects.js';
-import { subcontractorForm, subcontractorsList } from './views/subcontractors.js';
 import workHours from './views/workHours.js';
 import workerDetail from './views/workerDetail.js';
 import workerForm from './views/workerForm.js';
@@ -36,9 +35,6 @@ export const routes = [
   { path: '/proveedores', load: providersList },
   { path: '/proveedores/nuevo', load: providerForm },
   { path: '/proveedores/:id', load: providerForm },
-  { path: '/subcontratas', load: subcontractorsList },
-  { path: '/subcontratas/nuevo', load: subcontractorForm },
-  { path: '/subcontratas/:id', load: subcontractorForm },
   { path: '/bancos', load: banksList },
   { path: '/bancos/nuevo', load: bankForm },
   { path: '/bancos/:id', load: bankDetail },

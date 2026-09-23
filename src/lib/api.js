@@ -33,7 +33,7 @@ export async function signedUrls(bucket, paths) {
 }
 
 // ---------------------------------------------------------------------------
-// Trabajadores / proveedores / subcontratas: mismo patrón en los tres (listas maestras, baja lógica)
+// Trabajadores / proveedores: mismo patrón en los dos (listas maestras, baja lógica)
 // ---------------------------------------------------------------------------
 
 function listFactory(table, nameKey = 'name') {
@@ -69,11 +69,6 @@ export const listProviders = listFactory('providers');
 export const saveProvider = saveFactory('providers');
 export const setProviderActive = setActiveFactory('providers');
 export const deleteProvider = deleteFactory('providers');
-
-export const listSubcontractors = listFactory('subcontractors');
-export const saveSubcontractor = saveFactory('subcontractors');
-export const setSubcontractorActive = setActiveFactory('subcontractors');
-export const deleteSubcontractor = deleteFactory('subcontractors');
 
 export const listBanks = listFactory('banks');
 export const saveBank = saveFactory('banks');
@@ -191,20 +186,18 @@ export async function saveProject(id, fields) {
 export const setProjectActive = setActiveFactory('projects');
 export const deleteProject = deleteFactory('projects');
 
-/** Ficha completa: la obra + su checklist de hitos + proveedores/subcontratas asignados + certificaciones. */
+/** Ficha completa: la obra + su checklist de hitos + proveedores asignados + certificaciones. */
 export async function getProject(id) {
-  const [project, milestones, providers, subcontractors, certifications] = await Promise.all([
+  const [project, milestones, providers, certifications] = await Promise.all([
     supabase.from('projects').select('*').eq('id', id).single(),
     supabase.from('project_milestones').select('*').eq('project_id', id),
     supabase.from('project_providers').select('*, provider:providers(id,name,active)').eq('project_id', id),
-    supabase.from('project_subcontractors').select('*, subcontractor:subcontractors(id,name,active)').eq('project_id', id),
     supabase.from('project_certifications').select('*').eq('project_id', id).order('cert_date', { ascending: false }),
   ]);
   return {
     project: orThrow(project),
     milestones: orThrow(milestones),
     providers: orThrow(providers),
-    subcontractors: orThrow(subcontractors),
     certifications: orThrow(certifications),
   };
 }
@@ -248,27 +241,17 @@ export async function deleteAttachment(id, storagePath) {
 }
 
 // ---------------------------------------------------------------------------
-// Proveedores y subcontratas asignados a una obra
+// Proveedores asignados a una obra (con si han mandado su documentación)
 // ---------------------------------------------------------------------------
 
 export async function addProjectProvider(projectId, providerId, notes = null) {
   return orThrow(await supabase.from('project_providers').insert({ project_id: projectId, provider_id: providerId, notes }).select('*, provider:providers(id,name,active)').single());
 }
+export async function updateProjectProvider(id, patch) {
+  return orThrow(await supabase.from('project_providers').update(patch).eq('id', id).select('*, provider:providers(id,name,active)').single());
+}
 export async function removeProjectProvider(id) {
   const deleted = orThrow(await supabase.from('project_providers').delete().eq('id', id).select());
-  if (deleted.length === 0) throw new Error('No tienes permiso para quitar esto.');
-}
-
-export async function addProjectSubcontractor(projectId, subcontractorId) {
-  return orThrow(
-    await supabase.from('project_subcontractors').insert({ project_id: projectId, subcontractor_id: subcontractorId }).select('*, subcontractor:subcontractors(id,name,active)').single(),
-  );
-}
-export async function updateProjectSubcontractor(id, patch) {
-  return orThrow(await supabase.from('project_subcontractors').update(patch).eq('id', id).select('*, subcontractor:subcontractors(id,name,active)').single());
-}
-export async function removeProjectSubcontractor(id) {
-  const deleted = orThrow(await supabase.from('project_subcontractors').delete().eq('id', id).select());
   if (deleted.length === 0) throw new Error('No tienes permiso para quitar esto.');
 }
 

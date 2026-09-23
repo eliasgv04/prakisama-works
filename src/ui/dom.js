@@ -46,10 +46,15 @@ export function toast(message, kind = 'info', ms = 3800) {
 }
 
 // ---------- Diálogos (hoja inferior) ----------
-/** Abre una hoja modal. `build(close)` devuelve el contenido. Resuelve con el valor pasado a close(). */
+/**
+ * Abre una hoja modal. `build(close)` devuelve el contenido, o una promesa de él si antes hay que
+ * cargar algo (p. ej. la lista de proveedores para elegir uno): mientras tanto se ve "Cargando…".
+ * Resuelve con el valor pasado a close().
+ */
 export function openSheet(title, build) {
   return new Promise((resolve) => {
     const dialog = h('dialog', {});
+    const body = h('div', {}, h('p', { class: 'muted' }, 'Cargando…'));
     let result;
     const close = (value) => {
       result = value;
@@ -62,9 +67,16 @@ export function openSheet(title, build) {
     dialog.addEventListener('click', (event) => {
       if (event.target === dialog) dialog.close(); // clic en el fondo oscuro
     });
-    append(dialog, [h('h3', {}, title), build(close)]);
+    append(dialog, [h('h3', {}, title), body]);
     document.body.append(dialog);
     dialog.showModal();
+
+    const content = build(close);
+    Promise.resolve(content).then((node) => {
+      if (!dialog.isConnected) return; // se cerró antes de terminar de cargar
+      clear(body);
+      append(body, [node]);
+    });
   });
 }
 
