@@ -3,7 +3,7 @@
 // existe en la base de datos, se guardan en memoria ("staged") y se mandan justo después de crear
 // el trabajador. Al editar uno ya existente, esas tres cosas se gestionan desde su ficha.
 
-import { addMedicalCheckup, addTraining, addVacation, listWorkers, saveWorker, setWorkerActive, uploadTrainingAttachment } from '../lib/api.js';
+import { addMedicalCheckup, addTraining, addVacation, deleteWorker, listWorkers, saveWorker, setWorkerActive, uploadTrainingAttachment } from '../lib/api.js';
 import { todayISO } from '../lib/dates.js';
 import { friendlyError } from '../lib/errors.js';
 import { fmtDate } from '../lib/format.js';
@@ -94,6 +94,26 @@ export default async function workerForm({ params }) {
               }
             },
           }),
+      button('Eliminar', {
+        variant: 'danger',
+        block: true,
+        onClick: async () => {
+          const ok = await confirmDialog({
+            title: '¿Eliminar a este trabajador?',
+            message: 'Se borra de verdad (con su reconocimiento médico, formación y vacaciones), no se puede deshacer. Si tiene horas registradas en alguna obra, no se podrá borrar: da de baja en ese caso.',
+            confirmText: 'Eliminar',
+            danger: true,
+          });
+          if (!ok) return;
+          try {
+            await deleteWorker(worker.id);
+            toast('Trabajador eliminado', 'success');
+            navigate('/trabajadores');
+          } catch (err) {
+            toast(friendlyError(err), 'error');
+          }
+        },
+      }),
     );
     return { title: 'Editar trabajador', back: `/trabajadores/${params.id}`, tab: 'listas', node };
   }

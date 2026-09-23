@@ -51,22 +51,34 @@ function saveFactory(table) {
 function setActiveFactory(table) {
   return async (id, active) => orThrow(await supabase.from(table).update({ active }).eq('id', id).select().single());
 }
+/** Borrado de verdad (no baja lógica). Las claves foráneas (ON DELETE RESTRICT) impiden borrar algo
+ *  con historial real detrás (horas, asignaciones a una obra): en ese caso hay que dar de baja. */
+function deleteFactory(table) {
+  return async (id) => {
+    const deleted = orThrow(await supabase.from(table).delete().eq('id', id).select());
+    if (deleted.length === 0) throw new Error('No tienes permiso para borrar esto.');
+  };
+}
 
 export const listWorkers = listFactory('workers', 'full_name');
 export const saveWorker = saveFactory('workers');
 export const setWorkerActive = setActiveFactory('workers');
+export const deleteWorker = deleteFactory('workers');
 
 export const listProviders = listFactory('providers');
 export const saveProvider = saveFactory('providers');
 export const setProviderActive = setActiveFactory('providers');
+export const deleteProvider = deleteFactory('providers');
 
 export const listSubcontractors = listFactory('subcontractors');
 export const saveSubcontractor = saveFactory('subcontractors');
 export const setSubcontractorActive = setActiveFactory('subcontractors');
+export const deleteSubcontractor = deleteFactory('subcontractors');
 
 export const listBanks = listFactory('banks');
 export const saveBank = saveFactory('banks');
 export const setBankActive = setActiveFactory('banks');
+export const deleteBank = deleteFactory('banks');
 
 // ---------------------------------------------------------------------------
 // Finanzas: productos de cada banco
@@ -177,6 +189,7 @@ export async function saveProject(id, fields) {
 }
 
 export const setProjectActive = setActiveFactory('projects');
+export const deleteProject = deleteFactory('projects');
 
 /** Ficha completa: la obra + su checklist de hitos + proveedores/subcontratas asignados + certificaciones. */
 export async function getProject(id) {

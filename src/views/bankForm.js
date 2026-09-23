@@ -1,6 +1,6 @@
 // Alta y edición de un banco: datos básicos. Los productos se gestionan desde la ficha.
 
-import { listBanks, saveBank, setBankActive } from '../lib/api.js';
+import { deleteBank, listBanks, saveBank, setBankActive } from '../lib/api.js';
 import { makeEntityViews } from './simpleEntity.js';
 
 const { form } = makeEntityViews({
@@ -20,6 +20,8 @@ const { form } = makeEntityViews({
   list: listBanks,
   save: saveBank,
   setActive: setBankActive,
+  delete: deleteBank,
+  deleteWarning: 'Se borra de verdad, no se puede deshacer. Se borrarán también todos sus productos (préstamos, avales...), incluidos los avales vinculados a alguna obra.',
 });
 
 export default form;

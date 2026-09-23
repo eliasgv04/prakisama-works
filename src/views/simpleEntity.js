@@ -16,17 +16,21 @@ import { confirmDialog, h, toast } from '../ui/dom.js';
  * @param {string} cfg.route      "/trabajadores"
  * @param {string} cfg.nameField  columna del nombre ("full_name" o "name")
  * @param {string} cfg.nameLabel  etiqueta del campo nombre ("Nombre")
- * @param {{key:string, label:string, type?:string}[]} cfg.fields   resto de campos, en orden
+ * @param {{key:string, label:string, type?:string, listable?:boolean}[]} cfg.fields   resto de campos, en orden (listable:false = no sale en la línea de la lista, solo en el formulario)
  * @param {() => Promise<object[]>} cfg.list
  * @param {(id:string|null, fields:object) => Promise<object>} cfg.save
  * @param {(id:string, active:boolean) => Promise<object>} cfg.setActive
+ * @param {(id:string) => Promise<void>} cfg.delete   borrado de verdad (distinto de dar de baja)
+ * @param {string} [cfg.deleteWarning]  mensaje del diálogo de confirmación al eliminar (por defecto, avisa de que si tiene algo asignado no se podrá)
  * @param {string} [cfg.tab]      pestaña activa en la barra (por defecto "listas")
  * @param {string|null} [cfg.listBack]  flecha "volver" de la lista (por defecto "/listas"; null = sin flecha, es una pestaña de nivel superior)
  */
 export function makeEntityViews(cfg) {
   const tab = cfg.tab ?? 'listas';
   const listBack = cfg.listBack === undefined ? '/listas' : cfg.listBack;
-  const subtitleOf = (row) => cfg.fields.map((f) => row[f.key]).filter(Boolean).join(' · ');
+  // Solo los campos "listables" entran en la línea de la lista: con muchos campos, meterlos
+  // todos ahí sería ilegible (p. ej. la dirección o el número de cuenta se quedan solo en el formulario).
+  const subtitleOf = (row) => cfg.fields.filter((f) => f.listable !== false).map((f) => row[f.key]).filter(Boolean).join(' · ');
 
   async function list() {
     const all = await cfg.list();
@@ -135,6 +139,26 @@ export function makeEntityViews(cfg) {
                 }
               },
             }),
+        button('Eliminar', {
+          variant: 'danger',
+          block: true,
+          onClick: async () => {
+            const ok = await confirmDialog({
+              title: `¿Eliminar este ${cfg.singular}?`,
+              message: cfg.deleteWarning ?? 'Se borra de verdad, no se puede deshacer. Si tiene algo asignado (por ejemplo, una obra), no se podrá borrar hasta quitarlo de ahí.',
+              confirmText: 'Eliminar',
+              danger: true,
+            });
+            if (!ok) return;
+            try {
+              await cfg.delete(row.id);
+              toast(`${cfg.singular[0].toUpperCase()}${cfg.singular.slice(1)} eliminado`, 'success');
+              navigate(cfg.route);
+            } catch (err) {
+              toast(friendlyError(err), 'error');
+            }
+          },
+        }),
       );
     }
 

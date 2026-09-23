@@ -1,4 +1,4 @@
-import { listProviders, saveProvider, setProviderActive } from '../lib/api.js';
+import { deleteProvider, listProviders, saveProvider, setProviderActive } from '../lib/api.js';
 import { makeEntityViews } from './simpleEntity.js';
 
 const { list, form } = makeEntityViews({
@@ -10,13 +10,14 @@ const { list, form } = makeEntityViews({
   nameLabel: 'Nombre',
   fields: [
     { key: 'nif', label: 'CIF/NIF (opcional)' },
-    { key: 'contact_name', label: 'Persona de contacto (opcional)' },
     { key: 'phone', label: 'Teléfono (opcional)', type: 'tel' },
     { key: 'email', label: 'Email (opcional)', type: 'email' },
+    { key: 'address', label: 'Dirección (opcional)', listable: false },
   ],
   list: listProviders,
   save: saveProvider,
   setActive: setProviderActive,
+  delete: deleteProvider,
 });
 
 export const providersList = list;

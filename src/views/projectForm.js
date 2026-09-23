@@ -9,6 +9,7 @@ import {
   addCertification,
   addProjectProvider,
   addProjectSubcontractor,
+  deleteProject,
   getProject,
   listBanks,
   listProjects,
@@ -122,6 +123,26 @@ export default async function projectForm({ params }) {
               }
             },
           }),
+      button('Eliminar', {
+        variant: 'danger',
+        block: true,
+        onClick: async () => {
+          const ok = await confirmDialog({
+            title: '¿Eliminar esta obra?',
+            message: 'Se borra de verdad (con sus hitos, certificaciones y asignaciones de proveedores/subcontratas), no se puede deshacer. Un aval vinculado se queda en el banco, sin obra. Si tiene horas registradas, no se podrá borrar: da de baja en ese caso.',
+            confirmText: 'Eliminar',
+            danger: true,
+          });
+          if (!ok) return;
+          try {
+            await deleteProject(project.id);
+            toast('Obra eliminada', 'success');
+            navigate('/obras');
+          } catch (err) {
+            toast(friendlyError(err), 'error');
+          }
+        },
+      }),
     );
     return { title: 'Editar obra', back: `/obras/${params.id}`, tab: 'obras', node };
   }
