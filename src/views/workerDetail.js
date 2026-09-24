@@ -50,7 +50,13 @@ export default async function workerDetail({ params }) {
 // ---------------------------------------------------------------------------
 
 function heroCard(worker) {
-  const rows = [['DNI/NIF', worker.nif], ['Teléfono', worker.phone], ['Categoría', worker.role]].filter(([, v]) => v);
+  const rows = [
+    ['DNI/NIF', worker.nif],
+    ['Teléfono', worker.phone],
+    ['Categoría', worker.role],
+    ['Nº afiliación S.S.', worker.social_security_number],
+    ['Número de cuenta', worker.account_number],
+  ].filter(([, v]) => v);
   return h(
     'div',
     { class: 'card' },

@@ -26,13 +26,17 @@ export default async function workerForm({ params }) {
   const nif = textField('DNI/NIF (opcional)', 'nif', { value: w.nif ?? '' });
   const phone = textField('Teléfono (opcional)', 'phone', { type: 'tel', value: w.phone ?? '' });
   const role = textField('Categoría u oficio (opcional)', 'role', { value: w.role ?? '', placeholder: 'Ej.: oficial, peón, encargado' });
+  const ssNumber = textField('Nº afiliación S.S. (opcional)', 'social_security_number', { value: w.social_security_number ?? '' });
+  const accountNumber = textField('Número de cuenta (opcional)', 'account_number', { value: w.account_number ?? '' });
   const notes = areaField('Notas', 'notes', { value: w.notes ?? '' });
-  const basicFields = [name, nif, phone, role, notes];
+  const basicFields = [name, nif, phone, role, ssNumber, accountNumber, notes];
   const readBasicFields = () => ({
     full_name: name.querySelector('input').value.trim() || null,
     nif: nif.querySelector('input').value.trim() || null,
     phone: phone.querySelector('input').value.trim() || null,
     role: role.querySelector('input').value.trim() || null,
+    social_security_number: ssNumber.querySelector('input').value.trim() || null,
+    account_number: accountNumber.querySelector('input').value.trim() || null,
     notes: notes.querySelector('textarea').value.trim() || null,
   });
 
@@ -52,7 +56,7 @@ export default async function workerForm({ params }) {
           if (!f.full_name) return toast('Escribe el nombre.', 'error');
           save.disabled = true;
           try {
-            const saved = await saveWorker(params.id, { full_name: f.full_name, nif: f.nif, phone: f.phone, role: f.role, notes: f.notes });
+            const saved = await saveWorker(params.id, { full_name: f.full_name, nif: f.nif, phone: f.phone, role: f.role, social_security_number: f.social_security_number, account_number: f.account_number, notes: f.notes });
             toast('Trabajador guardado', 'success');
             navigate(`/trabajadores/${saved.id}`);
           } catch (err) {
