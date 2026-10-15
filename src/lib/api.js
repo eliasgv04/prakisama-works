@@ -117,6 +117,9 @@ export async function listMedicalCheckups(workerId) {
 export async function addMedicalCheckup(fields) {
   return orThrow(await supabase.from('worker_medical_checkups').insert(fields).select().single());
 }
+export async function updateMedicalCheckup(id, patch) {
+  return orThrow(await supabase.from('worker_medical_checkups').update(patch).eq('id', id).select().single());
+}
 export async function deleteMedicalCheckup(id) {
   const deleted = orThrow(await supabase.from('worker_medical_checkups').delete().eq('id', id).select());
   if (deleted.length === 0) throw new Error('No tienes permiso para borrar esto.');
@@ -135,6 +138,9 @@ export async function listTrainings(workerId) {
 }
 export async function addTraining(fields) {
   return orThrow(await supabase.from('worker_trainings').insert(fields).select().single());
+}
+export async function updateTraining(id, patch) {
+  return orThrow(await supabase.from('worker_trainings').update(patch).eq('id', id).select().single());
 }
 export async function deleteTraining(id) {
   const deleted = orThrow(await supabase.from('worker_trainings').delete().eq('id', id).select());
@@ -163,6 +169,9 @@ export async function listVacations(workerId) {
 }
 export async function addVacation(fields) {
   return orThrow(await supabase.from('worker_vacations').insert(fields).select().single());
+}
+export async function updateVacation(id, patch) {
+  return orThrow(await supabase.from('worker_vacations').update(patch).eq('id', id).select().single());
 }
 export async function deleteVacation(id) {
   const deleted = orThrow(await supabase.from('worker_vacations').delete().eq('id', id).select());

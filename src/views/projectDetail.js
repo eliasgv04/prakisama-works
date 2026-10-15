@@ -23,12 +23,13 @@ import {
 } from '../lib/api.js';
 import { dueStatus } from '../lib/dueStatus.js';
 import { friendlyError } from '../lib/errors.js';
-import { fmtDate, fmtMoney } from '../lib/format.js';
+import { fmtDate, fmtMoney, fmtPeriod } from '../lib/format.js';
 import { todayISO } from '../lib/dates.js';
 import { MAX_ATTACHMENT_BYTES, prepareAttachment } from '../lib/image.js';
 import { navigate } from '../router.js';
 import { accordion } from '../ui/accordion.js';
-import { button, chip, icon, readForm, section, selectField, textField, toNum } from '../ui/components.js';
+import { button, chip, icon, iconButton, readForm, section, selectField, textField, toNum } from '../ui/components.js';
+import { avalDateFields, avalDatesText } from '../ui/avalFields.js';
 import { confirmDialog, h, openSheet, toast } from '../ui/dom.js';
 
 export default async function projectDetail({ params }) {
@@ -39,7 +40,7 @@ export default async function projectDetail({ params }) {
   const right = h('div', { class: 'col' });
   const node = h('div', { class: 'detail-grid' }, left, right);
 
-  left.append(heroCard(project), milestonesCard(project, data.milestones), avalCard(project, avales, banks));
+  left.append(heroCard(project), milestonesCard(project, data.milestones), avalCard(project, avales, banks, data.milestones.find((m) => m.kind === 'recepcion_obra')?.done_date ?? ''));
   right.append(providersCard(project, data.providers), certificationsCard(project, data.certifications));
   right.append(h('div', { class: 'spacer' }), button('Editar obra', { variant: 'ghost', block: true, iconName: 'edit', onClick: () => navigate(`/obras/${project.id}/editar`) }));
 
@@ -52,7 +53,9 @@ function heroCard(project) {
   const rows = [
     ['Referencia', project.reference],
     ['Inicio', project.start_date ? fmtDate(project.start_date) : null],
-    ['Finalización', project.end_date ? fmtDate(project.end_date) : null],
+    [project.extended_end_date ? 'Finalización original' : 'Finalización', project.end_date ? fmtDate(project.end_date) : null],
+    ['Prórroga', project.extension_amount != null ? fmtPeriod(project.extension_amount, project.extension_unit) : null],
+    ['Finalización prorrogada', project.extended_end_date ? fmtDate(project.extended_end_date) : null],
     ['Base imponible', project.tax_base != null ? fmtMoney(project.tax_base) : null],
     ['IVA', project.vat_rate != null ? `${project.vat_rate}%` : null],
   ].filter(([, value]) => value);
@@ -65,6 +68,7 @@ function heroCard(project) {
       { class: 'hero' },
       h('div', { class: 'thumb' }, icon('clipboard', 30)),
       h('div', { class: 'grow' }, h('h2', {}, project.name), project.active ? null : chip('De baja', 'neutral')),
+      iconButton('edit', 'Editar obra', () => navigate(`/obras/${project.id}/editar`)),
     ),
     h('div', { class: 'spacer' }),
     project.total_amount != null ? h('div', {}, h('div', { class: 'muted small' }, 'Importe total'), h('div', { class: 'big' }, fmtMoney(project.total_amount))) : null,
@@ -190,7 +194,7 @@ function milestoneRow(project, milestone) {
 
 const AVAL_STATUS_LABEL = { ok: 'Al día', soon: 'Próximo', overdue: 'Vencido' };
 
-function avalCard(project, avales, banks) {
+function avalCard(project, avales, banks, receptionDefault) {
   const card = h('div', { class: 'card' });
   const list = h('div', { class: 'stack tight' });
 
@@ -207,13 +211,13 @@ function avalCard(project, avales, banks) {
           h(
             'div',
             { class: 'muted small' },
-            [a.bank?.name, a.amount != null ? fmtMoney(a.amount) : null, a.end_date ? `garantía hasta ${fmtDate(a.end_date)}` : null].filter(Boolean).join(' · '),
+            [a.bank?.name, a.amount != null ? fmtMoney(a.amount) : null, ...avalDatesText(a)].filter(Boolean).join(' · '),
           ),
           a.return_requested_date ? h('div', { class: 'muted small' }, `Devolución solicitada el ${fmtDate(a.return_requested_date)}`) : null,
           h(
             'div',
             { class: 'btn-row', style: 'margin-top:8px' },
-            button('Editar', { small: true, variant: 'ghost', onClick: () => openAvalSheet(project, banks, avales, render, a) }),
+            button('Editar', { small: true, variant: 'ghost', onClick: () => openAvalSheet(project, banks, avales, render, receptionDefault, a) }),
             button('Borrar', {
               small: true,
               variant: 'danger',
@@ -235,18 +239,18 @@ function avalCard(project, avales, banks) {
   }
   render();
 
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir aval', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openAvalSheet(project, banks, avales, render) })));
+  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir aval', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openAvalSheet(project, banks, avales, render, receptionDefault) })));
   return section('Aval', card);
 }
 
-function openAvalSheet(project, banks, avales, onSaved, existing = null) {
+function openAvalSheet(project, banks, avales, onSaved, receptionDefault, existing = null) {
   return openSheet(existing ? 'Editar aval' : 'Añadir aval', (close) => {
     const activeBanks = banks.filter((b) => b.active || b.id === existing?.bank_id).map((b) => [b.id, b.name]);
     if (activeBanks.length === 0) return h('p', { class: 'muted' }, 'Primero da de alta un banco en Finanzas.');
     const bank = selectField('Banco', 'bank_id', activeBanks, { value: existing?.bank_id ?? '' });
     const name = textField('Nombre', 'name', { required: true, value: existing?.name ?? 'Aval' });
     const amount = textField('Importe (€, opcional)', 'amount', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', value: existing?.amount ?? '' });
-    const endDate = textField('Fin del periodo de garantía (opcional)', 'end_date', { type: 'date', value: existing?.end_date ?? '', hint: 'Entra en el semáforo de la obra, del banco y el panel.' });
+    const dates = avalDateFields(existing, { receptionDefault });
     const returnRequested = textField('Solicitud de devolución (opcional)', 'return_requested_date', { type: 'date', value: existing?.return_requested_date ?? '' });
     const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }, existing?.notes ?? ''));
     const save = button('Guardar', { type: 'submit', block: true, iconName: 'check' });
@@ -260,7 +264,7 @@ function openAvalSheet(project, banks, avales, onSaved, existing = null) {
           if (!f.bank_id || !f.name) return toast('Elige el banco y escribe el nombre.', 'error');
           save.disabled = true;
           try {
-            const fields = { bank_id: f.bank_id, name: f.name, amount: toNum(f.amount), end_date: f.end_date, return_requested_date: f.return_requested_date, notes: f.notes, project_id: project.id };
+            const fields = { bank_id: f.bank_id, name: f.name, amount: toNum(f.amount), ...dates.read(), return_requested_date: f.return_requested_date, notes: f.notes, project_id: project.id };
             if (existing) {
               Object.assign(existing, await updateBankProduct(existing.id, fields));
             } else {
@@ -277,7 +281,7 @@ function openAvalSheet(project, banks, avales, onSaved, existing = null) {
       bank,
       name,
       amount,
-      endDate,
+      ...dates.nodes,
       returnRequested,
       notes,
       save,
@@ -337,6 +341,8 @@ function providersCard(project, rows) {
             }),
             'Ha mandado la documentación',
           ),
+          row.notes ? h('p', { class: 'muted small', style: 'margin-top:4px' }, row.notes) : null,
+          h('div', { class: 'btn-row', style: 'margin-top:8px' }, button('Editar', { small: true, variant: 'ghost', onClick: () => openEditProjectProviderSheet(row, render) })),
         ),
       );
     }
@@ -344,6 +350,42 @@ function providersCard(project, rows) {
   render();
   card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir proveedor', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openAddProviderSheet(project, rows, render) })));
   return section('Proveedores', card);
+}
+
+/** Asignación ya hecha: si ha mandado la documentación, en qué fecha, y notas. */
+function openEditProjectProviderSheet(row, onSaved) {
+  return openSheet(`Editar · ${row.provider?.name ?? 'proveedor'}`, (close) => {
+    const received = h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'documentation_received', checked: row.documentation_received }), 'Ha mandado la documentación');
+    const receivedOn = textField('Fecha de recepción de la documentación', 'documentation_received_on', { type: 'date', value: row.documentation_received_on ?? todayISO() });
+    receivedOn.hidden = !row.documentation_received;
+    received.querySelector('input').addEventListener('change', (event) => { receivedOn.hidden = !event.target.checked; });
+    const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }, row.notes ?? ''));
+    const save = button('Guardar', { type: 'submit', block: true, iconName: 'check' });
+    const form = h(
+      'form',
+      {
+        class: 'stack',
+        onsubmit: async (event) => {
+          event.preventDefault();
+          const f = readForm(form);
+          save.disabled = true;
+          try {
+            Object.assign(row, await updateProjectProvider(row.id, { documentation_received: f.documentation_received, documentation_received_on: f.documentation_received ? f.documentation_received_on : null, notes: f.notes }));
+            onSaved();
+            close(true);
+          } catch (err) {
+            toast(friendlyError(err), 'error');
+            save.disabled = false;
+          }
+        },
+      },
+      received,
+      receivedOn,
+      notes,
+      save,
+    );
+    return form;
+  });
 }
 
 function openAddProviderSheet(project, rows, onAdded) {
@@ -401,6 +443,7 @@ function certificationsCard(project, rows) {
           h(
             'div',
             { class: 'btn-row', style: 'margin-top:8px' },
+            button('Editar', { small: true, variant: 'ghost', onClick: () => openCertificationSheet(project, rows, render, row) }),
             !row.payment_date
               ? button('Marcar cobrada', { small: true, variant: 'ghost', onClick: async () => {
                   try {
@@ -427,20 +470,21 @@ function certificationsCard(project, rows) {
     }
   }
   render();
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir certificación', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openAddCertificationSheet(project, rows, render) })));
+  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir certificación', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openCertificationSheet(project, rows, render) })));
   return section('Certificaciones', card);
 }
 
-function openAddCertificationSheet(project, rows, onAdded) {
-  return openSheet('Añadir certificación', (close) => {
-    const date = textField('Fecha', 'cert_date', { type: 'date', required: true, value: todayISO() });
-    const amount = textField('Importe (€)', 'amount', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', required: true });
-    const paid = h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'paid' }), 'Ya está cobrada');
-    const paymentDate = textField('Fecha de cobro', 'payment_date', { type: 'date', value: todayISO() });
-    paymentDate.hidden = true;
+/** Sin `existing`: añade una nueva. Con `existing`: la edita (mismo formulario, precargado). */
+function openCertificationSheet(project, rows, onSaved, existing = null) {
+  return openSheet(existing ? 'Editar certificación' : 'Añadir certificación', (close) => {
+    const date = textField('Fecha', 'cert_date', { type: 'date', required: true, value: existing?.cert_date ?? todayISO() });
+    const amount = textField('Importe (€)', 'amount', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', required: true, value: existing?.amount ?? '' });
+    const paid = h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'paid', checked: Boolean(existing?.payment_date) }), 'Ya está cobrada');
+    const paymentDate = textField('Fecha de cobro', 'payment_date', { type: 'date', value: existing?.payment_date ?? todayISO() });
+    paymentDate.hidden = !existing?.payment_date;
     paid.querySelector('input').addEventListener('change', (event) => { paymentDate.hidden = !event.target.checked; });
-    const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }));
-    const save = button('Añadir', { type: 'submit', block: true, iconName: 'check' });
+    const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }, existing?.notes ?? ''));
+    const save = button(existing ? 'Guardar' : 'Añadir', { type: 'submit', block: true, iconName: 'check' });
     const form = h(
       'form',
       {
@@ -451,9 +495,11 @@ function openAddCertificationSheet(project, rows, onAdded) {
           if (!f.cert_date || toNum(f.amount) == null) return toast('Rellena la fecha y el importe.', 'error');
           save.disabled = true;
           try {
-            const row = await addCertification(project.id, { cert_date: f.cert_date, amount: toNum(f.amount), payment_date: f.paid ? f.payment_date : null, notes: f.notes });
-            rows.unshift(row);
-            onAdded();
+            const fields = { cert_date: f.cert_date, amount: toNum(f.amount), payment_date: f.paid ? f.payment_date : null, notes: f.notes };
+            if (existing) Object.assign(existing, await updateCertification(existing.id, fields));
+            else rows.push(await addCertification(project.id, fields));
+            rows.sort((a, b) => (a.cert_date < b.cert_date ? 1 : -1));
+            onSaved();
             close(true);
           } catch (err) {
             toast(friendlyError(err), 'error');

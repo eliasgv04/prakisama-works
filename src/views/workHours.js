@@ -1,7 +1,7 @@
 // Parte de horas: qué trabajador hizo cuántas horas en qué obra, día a día. Se navega día a día
 // como un calendario; para dar de alta trabajadores y obras se usan sus listas, aquí solo se eligen.
 
-import { addWorkHours, deleteWorkHours, listProjects, listWorkHours, listWorkers } from '../lib/api.js';
+import { addWorkHours, deleteWorkHours, listProjects, listWorkHours, listWorkers, updateWorkHours } from '../lib/api.js';
 import { todayISO } from '../lib/dates.js';
 import { friendlyError } from '../lib/errors.js';
 import { fmtDate, fmtHours } from '../lib/format.js';
@@ -39,6 +39,7 @@ export default async function workHours({ query }) {
           h(
             'div',
             { class: 'btn-row', style: 'margin-top:8px' },
+            button('Editar', { small: true, variant: 'ghost', onClick: () => openHoursSheet(date, workers, projects, e) }),
             button('Borrar', {
               small: true,
               variant: 'danger',
@@ -75,24 +76,26 @@ export default async function workHours({ query }) {
     nav,
     h('p', { class: 'muted' }, `${fmtDate(date)} · ${fmtHours(total)} en total`),
     listHost,
-    h('a', { class: 'fab', href: '#', 'aria-label': 'Añadir horas', onclick: (event) => { event.preventDefault(); openAddHoursSheet(date, workers, projects); } }, icon('plus')),
+    h('a', { class: 'fab', href: '#', 'aria-label': 'Añadir horas', onclick: (event) => { event.preventDefault(); openHoursSheet(date, workers, projects); } }, icon('plus')),
   );
 
   return { title: 'Horas', node, tab: 'horas', wide: true };
 }
 
-function openAddHoursSheet(date, workers, projects) {
-  return openSheet('Añadir horas', (close) => {
-    const activeWorkers = workers.filter((w) => w.active).map((w) => [w.id, w.full_name]);
-    const activeProjects = projects.filter((p) => p.active).map((p) => [p.id, p.name]);
+/** Sin `existing`: añade un registro. Con `existing`: lo edita (también se puede cambiar de día, trabajador u obra). */
+function openHoursSheet(date, workers, projects, existing = null) {
+  return openSheet(existing ? 'Editar horas' : 'Añadir horas', (close) => {
+    // Al editar, el trabajador/obra del registro sale aunque esté de baja.
+    const activeWorkers = workers.filter((w) => w.active || w.id === existing?.worker_id).map((w) => [w.id, w.full_name]);
+    const activeProjects = projects.filter((p) => p.active || p.id === existing?.project_id).map((p) => [p.id, p.name]);
     if (activeWorkers.length === 0 || activeProjects.length === 0) {
       return h('p', { class: 'muted' }, 'Hace falta al menos un trabajador y una obra activos. Créalos primero desde Listas y Obras.');
     }
-    const worker = selectField('Trabajador', 'worker_id', activeWorkers);
-    const project = selectField('Obra', 'project_id', activeProjects);
-    const dateField = textField('Fecha', 'work_date', { type: 'date', required: true, value: date });
-    const hours = textField('Horas', 'hours', { type: 'number', inputmode: 'decimal', min: 0.25, max: 24, step: '0.25', required: true, value: '8' });
-    const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }));
+    const worker = selectField('Trabajador', 'worker_id', activeWorkers, { value: existing?.worker_id ?? activeWorkers[0][0] });
+    const project = selectField('Obra', 'project_id', activeProjects, { value: existing?.project_id ?? activeProjects[0][0] });
+    const dateField = textField('Fecha', 'work_date', { type: 'date', required: true, value: existing?.work_date ?? date });
+    const hours = textField('Horas', 'hours', { type: 'number', inputmode: 'decimal', min: 0.25, max: 24, step: '0.25', required: true, value: existing?.hours ?? '8' });
+    const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }, existing?.notes ?? ''));
     const save = button('Guardar', { type: 'submit', block: true, iconName: 'check' });
     const form = h(
       'form',
@@ -104,7 +107,9 @@ function openAddHoursSheet(date, workers, projects) {
           if (!f.work_date || toNum(f.hours) == null) return toast('Rellena la fecha y las horas.', 'error');
           save.disabled = true;
           try {
-            await addWorkHours({ worker_id: f.worker_id, project_id: f.project_id, work_date: f.work_date, hours: toNum(f.hours), notes: f.notes });
+            const fields = { worker_id: f.worker_id, project_id: f.project_id, work_date: f.work_date, hours: toNum(f.hours), notes: f.notes };
+            if (existing) await updateWorkHours(existing.id, fields);
+            else await addWorkHours(fields);
             toast('Horas guardadas', 'success');
             close(true);
             location.hash = `#/horas?fecha=${f.work_date}`;

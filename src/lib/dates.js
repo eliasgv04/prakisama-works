@@ -38,3 +38,23 @@ export function formatES(iso) {
   const p = parseISO(iso);
   return p ? `${pad(p.d)}/${pad(p.m)}/${pad(p.y, 4)}` : '';
 }
+
+/**
+ * Suma `amount` días, meses o años (`unit`: 'day' | 'month' | 'year') a una fecha ISO. Si el día
+ * no existe en el mes de destino se queda en el último (31/01 + 1 mes = 28/02), igual que
+ * Postgres al sumar un interval: así lo que se ve en el formulario cuadra con lo que se guarda.
+ */
+export function addPeriod(iso, amount, unit) {
+  const p = parseISO(iso);
+  const n = Number(amount);
+  if (!p || !Number.isInteger(n)) return null;
+  if (unit === 'day') {
+    const t = new Date(Date.UTC(p.y, p.m - 1, p.d + n));
+    return `${pad(t.getUTCFullYear(), 4)}-${pad(t.getUTCMonth() + 1)}-${pad(t.getUTCDate())}`;
+  }
+  const months = unit === 'year' ? n * 12 : n;
+  const total = p.y * 12 + (p.m - 1) + months;
+  const y = Math.floor(total / 12);
+  const m = (total % 12) + 1;
+  return `${pad(y, 4)}-${pad(m)}-${pad(Math.min(p.d, daysInMonth(y, m)))}`;
+}

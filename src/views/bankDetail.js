@@ -7,7 +7,8 @@ import { dueStatus } from '../lib/dueStatus.js';
 import { friendlyError } from '../lib/errors.js';
 import { fmtDate, fmtMoney } from '../lib/format.js';
 import { navigate } from '../router.js';
-import { button, chip, icon, readForm, section, selectField, textField, toNum } from '../ui/components.js';
+import { button, chip, icon, iconButton, readForm, section, selectField, textField, toNum } from '../ui/components.js';
+import { avalDateFields, avalDatesText } from '../ui/avalFields.js';
 import { confirmDialog, h, openSheet, toast } from '../ui/dom.js';
 
 const STATUS_LABEL = { ok: 'Al día', soon: 'Próximo', overdue: 'Vencido' };
@@ -27,7 +28,7 @@ function heroCard(bank) {
   return h(
     'div',
     { class: 'card' },
-    h('div', { class: 'hero' }, h('div', { class: 'thumb' }, icon('euro', 30)), h('div', { class: 'grow' }, h('h2', {}, bank.name), bank.active ? null : chip('De baja', 'neutral'))),
+    h('div', { class: 'hero' }, h('div', { class: 'thumb' }, icon('euro', 30)), h('div', { class: 'grow' }, h('h2', {}, bank.name), bank.active ? null : chip('De baja', 'neutral')), iconButton('edit', 'Editar banco', () => navigate(`/bancos/${bank.id}/editar`))),
     rows.length ? h('dl', { class: 'kv', style: 'margin-top:12px' }, rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])) : null,
     bank.notes ? h('p', { class: 'muted', style: 'margin-top:10px;white-space:pre-wrap' }, bank.notes) : null,
   );
@@ -50,7 +51,7 @@ function productsCard(bank, products) {
           h(
             'div',
             { class: 'muted small' },
-            [p.amount != null ? fmtMoney(p.amount) : null, p.end_date ? `garantía hasta ${fmtDate(p.end_date)}` : 'sin fecha de finalización', p.project?.name ? `obra: ${p.project.name}` : null]
+            [p.amount != null ? fmtMoney(p.amount) : null, ...(p.end_date ? avalDatesText(p) : ['sin fecha de finalización']), p.project?.name ? `obra: ${p.project.name}` : null]
               .filter(Boolean)
               .join(' · '),
           ),
@@ -94,7 +95,7 @@ function openProductSheet(bank, products, onSaved, existing = null) {
 
       const name = textField('Nombre', 'name', { required: true, value: existing?.name ?? '', placeholder: 'Ej.: Préstamo nave industrial, Aval obra X…' });
       const amount = textField('Importe o límite (€, opcional)', 'amount', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', value: existing?.amount ?? '' });
-      const endDate = textField('Fecha de finalización o de fin de garantía (opcional)', 'end_date', { type: 'date', value: existing?.end_date ?? '', hint: 'Si se pone, entra en el semáforo de la lista y el panel.' });
+      const dates = avalDateFields(existing, { manualEnd: true });
       const project = selectField('Obra relacionada (opcional)', 'project_id', projectOptions, { value: existing?.project_id ?? '', hint: 'Para un aval: la obra a la que garantiza. Se ve también desde la ficha de la obra.' });
       const returnRequested = textField('Solicitud de devolución (opcional)', 'return_requested_date', { type: 'date', value: existing?.return_requested_date ?? '' });
       const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }, existing?.notes ?? ''));
@@ -109,7 +110,7 @@ function openProductSheet(bank, products, onSaved, existing = null) {
             if (!f.name) return toast('Escribe el nombre del producto.', 'error');
             save.disabled = true;
             try {
-              const fields = { name: f.name, amount: toNum(f.amount), end_date: f.end_date, project_id: f.project_id, return_requested_date: f.return_requested_date, notes: f.notes };
+              const fields = { name: f.name, amount: toNum(f.amount), ...dates.read(), project_id: f.project_id, return_requested_date: f.return_requested_date, notes: f.notes };
               if (existing) {
                 Object.assign(existing, await updateBankProduct(existing.id, fields));
               } else {
@@ -126,8 +127,8 @@ function openProductSheet(bank, products, onSaved, existing = null) {
         },
         name,
         amount,
-        endDate,
         project,
+        ...dates.nodes,
         returnRequested,
         notes,
         save,

@@ -18,13 +18,14 @@ import {
   setProjectActive,
   uploadMilestoneAttachment,
 } from '../lib/api.js';
-import { todayISO } from '../lib/dates.js';
+import { addPeriod, todayISO } from '../lib/dates.js';
 import { friendlyError } from '../lib/errors.js';
-import { fmtDate, fmtMoney } from '../lib/format.js';
+import { fmtDate, fmtMoney, fmtPeriod } from '../lib/format.js';
 import { MAX_ATTACHMENT_BYTES, prepareAttachment } from '../lib/image.js';
 import { navigate } from '../router.js';
 import { accordion } from '../ui/accordion.js';
-import { areaField, button, chip, readForm, section, selectField, textField, toNum } from '../ui/components.js';
+import { areaField, button, chip, periodField, readForm, section, selectField, textField, toNum } from '../ui/components.js';
+import { avalDateFields, avalDatesText } from '../ui/avalFields.js';
 import { confirmDialog, h, openSheet, toast } from '../ui/dom.js';
 import { removableRow, stagedSection } from '../ui/staging.js';
 
@@ -42,6 +43,19 @@ export default async function projectForm({ params }) {
   const startDate = textField('Inicio (opcional)', 'start_date', { type: 'date', value: p.start_date ?? '' });
   const endDate = textField('Finalización (opcional)', 'end_date', { type: 'date', value: p.end_date ?? '' });
 
+  // Prórroga: periodo que se suma a la finalización original; la fecha prorrogada la calcula
+  // Postgres (columna generada extended_end_date), aquí solo se enseña al momento.
+  const extension = periodField('Prórroga (opcional)', { amount: p.extension_amount, unit: p.extension_unit ?? 'month', hint: 'Se suma a la finalización original. Se ven las dos fechas.' });
+  const extendedPreview = h('div', { class: 'strong' });
+  const updateExtended = () => {
+    const end = endDate.querySelector('input').value;
+    const { amount, unit } = extension.read();
+    extendedPreview.textContent = amount == null ? 'Sin prórroga' : !end ? 'Pon primero la finalización original' : `${fmtDate(addPeriod(end, amount, unit))} (${fmtPeriod(amount, unit)} más)`;
+  };
+  endDate.querySelector('input').addEventListener('input', updateExtended);
+  extension.onChange(updateExtended);
+  updateExtended();
+
   const taxBase = textField('Base imponible (€)', 'tax_base', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', value: p.tax_base ?? '' });
   const vatRate = textField('IVA (%)', 'vat_rate', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', value: p.vat_rate ?? '21', hint: 'El importe total se calcula solo a partir de estos dos valores.' });
   const totalPreview = h('div', { class: 'big' }, p.total_amount != null ? fmtMoney(p.total_amount) : '—');
@@ -54,12 +68,15 @@ export default async function projectForm({ params }) {
   vatRate.querySelector('input').addEventListener('input', updateTotal);
 
   const notes = areaField('Notas', 'notes', { value: p.notes ?? '' });
-  const basicFields = [name, reference, h('div', { class: 'row2' }, startDate, endDate), h('div', { class: 'row2' }, taxBase, vatRate), h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Importe total (calculado)'), totalPreview), notes];
+  const durationFields = section('Duración de la obra', h('div', { class: 'stack' }, h('div', { class: 'row2' }, startDate, endDate), extension, h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Finalización prorrogada (calculada)'), extendedPreview)));
+  const basicFields = [name, reference, durationFields, h('div', { class: 'row2' }, taxBase, vatRate), h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Importe total (calculado)'), totalPreview), notes];
   const readBasicFields = () => ({
     name: name.querySelector('input').value.trim() || null,
     reference: reference.querySelector('input').value.trim() || null,
     start_date: startDate.querySelector('input').value || null,
     end_date: endDate.querySelector('input').value || null,
+    extension_amount: extension.read().amount,
+    extension_unit: extension.read().amount == null ? null : extension.read().unit,
     tax_base: toNum(taxBase.querySelector('input').value),
     vat_rate: toNum(vatRate.querySelector('input').value),
     notes: notes.querySelector('textarea').value.trim() || null,
@@ -77,6 +94,7 @@ export default async function projectForm({ params }) {
           event.preventDefault();
           const f = readBasicFields();
           if (!f.name) return toast('Escribe el nombre de la obra.', 'error');
+          if (f.extension_amount != null && !f.end_date) return toast('Para la prórroga hace falta la finalización original.', 'error');
           save.disabled = true;
           try {
             const saved = await saveProject(params.id, f);
@@ -158,8 +176,8 @@ export default async function projectForm({ params }) {
   const avalCard = stagedSection(
     'Añadir aval',
     stagedAval,
-    (a, remove) => removableRow(a.name, [banks.find((b) => b.id === a.bank_id)?.name, a.amount != null ? fmtMoney(a.amount) : null, a.end_date ? `hasta ${fmtDate(a.end_date)}` : null].filter(Boolean).join(' · '), remove),
-    () => openStagedAvalSheet(banks, stagedAval, avalCard.render),
+    (a, remove) => removableRow(a.name, [banks.find((b) => b.id === a.bank_id)?.name, a.amount != null ? fmtMoney(a.amount) : null, ...avalDatesText(a)].filter(Boolean).join(' · '), remove),
+    () => openStagedAvalSheet(banks, stagedAval, avalCard.render, stagedMilestones.recepcion_obra?.done_date ?? ''),
   );
 
   const providersCardEl = stagedSection(
@@ -180,6 +198,7 @@ export default async function projectForm({ params }) {
   save.onclick = async () => {
     const fields = readBasicFields();
     if (!fields.name) return toast('Escribe el nombre de la obra.', 'error');
+    if (fields.extension_amount != null && !fields.end_date) return toast('Para la prórroga hace falta la finalización original.', 'error');
     save.disabled = true;
     try {
       const saved = await saveProject(null, fields);
@@ -297,14 +316,14 @@ function stagedMilestoneRow(kind, state) {
 // Aval, proveedores y certificaciones "en preparación"
 // ---------------------------------------------------------------------------
 
-function openStagedAvalSheet(banks, list, onAdded) {
+function openStagedAvalSheet(banks, list, onAdded, receptionDefault) {
   return openSheet('Añadir aval', (close) => {
     const activeBanks = banks.filter((b) => b.active);
     if (activeBanks.length === 0) return h('p', { class: 'muted' }, 'Primero da de alta un banco en Finanzas.');
     const bank = selectField('Banco', 'bank_id', activeBanks.map((b) => [b.id, b.name]));
     const name = textField('Nombre', 'name', { required: true, value: 'Aval' });
     const amount = textField('Importe (€, opcional)', 'amount', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01' });
-    const endDate = textField('Fin del periodo de garantía (opcional)', 'end_date', { type: 'date' });
+    const dates = avalDateFields(null, { receptionDefault });
     const returnRequested = textField('Solicitud de devolución (opcional)', 'return_requested_date', { type: 'date' });
     const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }));
     const add = button('Añadir', { type: 'submit', block: true, iconName: 'check' });
@@ -316,7 +335,7 @@ function openStagedAvalSheet(banks, list, onAdded) {
           event.preventDefault();
           const f = readForm(form);
           if (!f.bank_id || !f.name) return toast('Elige el banco y escribe el nombre.', 'error');
-          list.push({ bank_id: f.bank_id, name: f.name, amount: toNum(f.amount), end_date: f.end_date, return_requested_date: f.return_requested_date, notes: f.notes });
+          list.push({ bank_id: f.bank_id, name: f.name, amount: toNum(f.amount), ...dates.read(), return_requested_date: f.return_requested_date, notes: f.notes });
           onAdded();
           close(true);
         },
@@ -324,7 +343,7 @@ function openStagedAvalSheet(banks, list, onAdded) {
       bank,
       name,
       amount,
-      endDate,
+      ...dates.nodes,
       returnRequested,
       notes,
       add,

@@ -14,6 +14,9 @@ import {
   listTrainings,
   listVacations,
   listWorkers,
+  updateMedicalCheckup,
+  updateTraining,
+  updateVacation,
   uploadTrainingAttachment,
 } from '../lib/api.js';
 import { todayISO } from '../lib/dates.js';
@@ -22,7 +25,7 @@ import { fmtDate } from '../lib/format.js';
 import { MAX_ATTACHMENT_BYTES, prepareAttachment } from '../lib/image.js';
 import { dueStatus } from '../lib/dueStatus.js';
 import { navigate } from '../router.js';
-import { button, chip, icon, readForm, section, textField } from '../ui/components.js';
+import { button, chip, icon, iconButton, readForm, section, textField } from '../ui/components.js';
 import { confirmDialog, h, openSheet, toast } from '../ui/dom.js';
 
 const STATUS_LABEL = { ok: 'Al día', soon: 'Próximo', overdue: 'Vencido' };
@@ -60,7 +63,7 @@ function heroCard(worker) {
   return h(
     'div',
     { class: 'card' },
-    h('div', { class: 'hero' }, h('div', { class: 'thumb' }, icon('users', 30)), h('div', { class: 'grow' }, h('h2', {}, worker.full_name), worker.active ? null : chip('De baja', 'neutral'))),
+    h('div', { class: 'hero' }, h('div', { class: 'thumb' }, icon('users', 30)), h('div', { class: 'grow' }, h('h2', {}, worker.full_name), worker.active ? null : chip('De baja', 'neutral')), iconButton('edit', 'Editar trabajador', () => navigate(`/trabajadores/${worker.id}/editar`))),
     rows.length ? h('dl', { class: 'kv', style: 'margin-top:12px' }, rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])) : null,
     worker.notes ? h('p', { class: 'muted', style: 'margin-top:10px;white-space:pre-wrap' }, worker.notes) : null,
   );
@@ -103,7 +106,8 @@ function medicalCard(worker, checkups) {
           c.notes ? h('p', { class: 'muted small', style: 'margin-top:4px' }, c.notes) : null,
           h(
             'div',
-            { style: 'margin-top:8px' },
+            { class: 'btn-row', style: 'margin-top:8px' },
+            button('Editar', { small: true, variant: 'ghost', onClick: () => openCheckupSheet(worker, checkups, render, c) }),
             button('Borrar', {
               small: true,
               variant: 'danger',
@@ -125,15 +129,16 @@ function medicalCard(worker, checkups) {
   }
   render();
 
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Registrar reconocimiento', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openAddCheckupSheet(worker, checkups, render) })));
+  card.append(list, h('div', { style: 'margin-top:12px' }, button('Registrar reconocimiento', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openCheckupSheet(worker, checkups, render) })));
   return section('Reconocimiento médico', card);
 }
 
-function openAddCheckupSheet(worker, checkups, onAdded) {
-  return openSheet('Registrar reconocimiento médico', (close) => {
-    const date = textField('Fecha', 'checkup_date', { type: 'date', required: true, value: todayISO() });
-    const validUntil = textField('Vencimiento (opcional)', 'valid_until', { type: 'date', hint: 'Si se sabe cuándo caduca, entra en el semáforo de la lista y el panel.' });
-    const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }));
+/** Sin `existing`: registra uno nuevo. Con `existing`: lo edita (mismo formulario, precargado). */
+function openCheckupSheet(worker, checkups, onSaved, existing = null) {
+  return openSheet(existing ? 'Editar reconocimiento médico' : 'Registrar reconocimiento médico', (close) => {
+    const date = textField('Fecha', 'checkup_date', { type: 'date', required: true, value: existing?.checkup_date ?? todayISO() });
+    const validUntil = textField('Vencimiento (opcional)', 'valid_until', { type: 'date', value: existing?.valid_until ?? '', hint: 'Si se sabe cuándo caduca, entra en el semáforo de la lista y el panel.' });
+    const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }, existing?.notes ?? ''));
     const save = button('Guardar', { type: 'submit', block: true, iconName: 'check' });
     const form = h(
       'form',
@@ -145,10 +150,11 @@ function openAddCheckupSheet(worker, checkups, onAdded) {
           if (!f.checkup_date) return toast('Indica la fecha.', 'error');
           save.disabled = true;
           try {
-            const row = await addMedicalCheckup({ worker_id: worker.id, checkup_date: f.checkup_date, valid_until: f.valid_until, notes: f.notes });
-            checkups.unshift(row);
+            const fields = { checkup_date: f.checkup_date, valid_until: f.valid_until, notes: f.notes };
+            if (existing) Object.assign(existing, await updateMedicalCheckup(existing.id, fields));
+            else checkups.push(await addMedicalCheckup({ ...fields, worker_id: worker.id }));
             checkups.sort((a, b) => (a.checkup_date < b.checkup_date ? 1 : -1));
-            onAdded();
+            onSaved();
             close(true);
           } catch (err) {
             toast(friendlyError(err), 'error');
@@ -185,7 +191,8 @@ function trainingsCard(worker, trainings) {
         h('div', { class: 'attachments' }),
         h(
           'div',
-          { style: 'margin-top:8px' },
+          { class: 'btn-row', style: 'margin-top:8px' },
+          button('Editar', { small: true, variant: 'ghost', onClick: () => openTrainingSheet(worker, trainings, render, t) }),
           button('Borrar', {
             small: true,
             variant: 'danger',
@@ -235,15 +242,16 @@ function trainingsCard(worker, trainings) {
   }
   render();
 
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir formación', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openAddTrainingSheet(worker, trainings, render) })));
+  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir formación', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openTrainingSheet(worker, trainings, render) })));
   return section('Formación', card);
 }
 
-function openAddTrainingSheet(worker, trainings, onAdded) {
-  return openSheet('Añadir formación', (close) => {
-    const date = textField('Fecha', 'training_date', { type: 'date', required: true, value: todayISO() });
-    const name = textField('Nombre del curso', 'name', { required: true, placeholder: 'Ej.: PRL 20 horas' });
-    const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }));
+/** Sin `existing`: añade una nueva. Con `existing`: la edita; el archivo elegido se suma a sus certificados. */
+function openTrainingSheet(worker, trainings, onSaved, existing = null) {
+  return openSheet(existing ? 'Editar formación' : 'Añadir formación', (close) => {
+    const date = textField('Fecha', 'training_date', { type: 'date', required: true, value: existing?.training_date ?? todayISO() });
+    const name = textField('Nombre del curso', 'name', { required: true, value: existing?.name ?? '', placeholder: 'Ej.: PRL 20 horas' });
+    const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }, existing?.notes ?? ''));
     let file = null;
     const fileLabel = h('span', { class: 'muted small' }, 'Sin archivo');
     const fileInput = h('input', {
@@ -263,7 +271,8 @@ function openAddTrainingSheet(worker, trainings, onAdded) {
           if (!f.training_date || !f.name) return toast('Indica la fecha y el nombre del curso.', 'error');
           save.disabled = true;
           try {
-            const row = await addTraining({ worker_id: worker.id, training_date: f.training_date, name: f.name, notes: f.notes });
+            const fields = { training_date: f.training_date, name: f.name, notes: f.notes };
+            const row = existing ? Object.assign(existing, await updateTraining(existing.id, fields)) : await addTraining({ ...fields, worker_id: worker.id });
             if (file) {
               try {
                 const ready = await prepareAttachment(file);
@@ -273,9 +282,9 @@ function openAddTrainingSheet(worker, trainings, onAdded) {
                 toast(`Formación guardada, pero el adjunto falló: ${friendlyError(err)}`, 'error', 6000);
               }
             }
-            trainings.unshift(row);
+            if (!existing) trainings.push(row);
             trainings.sort((a, b) => (a.training_date < b.training_date ? 1 : -1));
-            onAdded();
+            onSaved();
             close(true);
           } catch (err) {
             toast(friendlyError(err), 'error');
@@ -286,7 +295,7 @@ function openAddTrainingSheet(worker, trainings, onAdded) {
       date,
       name,
       notes,
-      h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Certificado (opcional)'), h('div', { class: 'btn-row' }, button('Elegir archivo', { variant: 'ghost', small: true, iconName: 'camera', onClick: () => fileInput.click() }), fileLabel), fileInput),
+      h('div', { class: 'field' }, h('span', { class: 'field-label' }, existing ? 'Añadir otro certificado (opcional)' : 'Certificado (opcional)'), h('div', { class: 'btn-row' }, button('Elegir archivo', { variant: 'ghost', small: true, iconName: 'camera', onClick: () => fileInput.click() }), fileLabel), fileInput),
       save,
     );
     return form;
@@ -315,7 +324,8 @@ function vacationsCard(worker, vacations) {
           v.notes ? h('p', { class: 'muted small', style: 'margin-top:4px' }, v.notes) : null,
           h(
             'div',
-            { style: 'margin-top:8px' },
+            { class: 'btn-row', style: 'margin-top:8px' },
+            button('Editar', { small: true, variant: 'ghost', onClick: () => openVacationSheet(worker, vacations, render, v) }),
             button('Borrar', {
               small: true,
               variant: 'danger',
@@ -337,15 +347,15 @@ function vacationsCard(worker, vacations) {
   }
   render();
 
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir periodo', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openAddVacationSheet(worker, vacations, render) })));
+  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir periodo', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openVacationSheet(worker, vacations, render) })));
   return section('Vacaciones', card);
 }
 
-function openAddVacationSheet(worker, vacations, onAdded) {
-  return openSheet('Añadir periodo de vacaciones', (close) => {
-    const start = textField('Inicio', 'start_date', { type: 'date', required: true, value: todayISO() });
-    const end = textField('Fin', 'end_date', { type: 'date', required: true, value: todayISO() });
-    const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }));
+function openVacationSheet(worker, vacations, onSaved, existing = null) {
+  return openSheet(existing ? 'Editar periodo de vacaciones' : 'Añadir periodo de vacaciones', (close) => {
+    const start = textField('Inicio', 'start_date', { type: 'date', required: true, value: existing?.start_date ?? todayISO() });
+    const end = textField('Fin', 'end_date', { type: 'date', required: true, value: existing?.end_date ?? todayISO() });
+    const notes = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Notas (opcional)'), h('textarea', { name: 'notes' }, existing?.notes ?? ''));
     const save = button('Guardar', { type: 'submit', block: true, iconName: 'check' });
     const form = h(
       'form',
@@ -358,10 +368,11 @@ function openAddVacationSheet(worker, vacations, onAdded) {
           if (f.end_date < f.start_date) return toast('El fin no puede ser antes que el inicio.', 'error');
           save.disabled = true;
           try {
-            const row = await addVacation({ worker_id: worker.id, start_date: f.start_date, end_date: f.end_date, notes: f.notes });
-            vacations.unshift(row);
+            const fields = { start_date: f.start_date, end_date: f.end_date, notes: f.notes };
+            if (existing) Object.assign(existing, await updateVacation(existing.id, fields));
+            else vacations.push(await addVacation({ ...fields, worker_id: worker.id }));
             vacations.sort((a, b) => (a.start_date < b.start_date ? 1 : -1));
-            onAdded();
+            onSaved();
             close(true);
           } catch (err) {
             toast(friendlyError(err), 'error');

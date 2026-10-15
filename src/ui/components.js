@@ -74,6 +74,26 @@ export function selectField(label, name, options, { value = '', required = false
   return wrapField(label, select, { hint });
 }
 
+const PERIOD_UNIT_LABELS = { day: 'Días', month: 'Meses', year: 'Años' };
+
+/**
+ * Periodo = cantidad + unidad (días/meses/años). Sin `name` en los controles: no entra en
+ * readForm(); se lee con `field.read()` → { amount, unit } (amount null si está vacío).
+ * `field.onChange(fn)` avisa en cada cambio, para recalcular la fecha resultante al momento.
+ */
+export function periodField(label, { amount = null, unit = 'month', units = ['day', 'month', 'year'], hint } = {}) {
+  const number = h('input', { type: 'number', inputmode: 'numeric', min: 1, step: 1, value: amount ?? '', placeholder: 'Sin indicar' });
+  const select = h('select', {}, units.map((u) => h('option', { value: u }, PERIOD_UNIT_LABELS[u])));
+  select.value = units.includes(unit) ? unit : units[0];
+  const field = wrapField(label, h('div', { class: 'row2' }, number, select), { hint });
+  field.read = () => ({ amount: toInt(number.value), unit: select.value });
+  field.onChange = (fn) => {
+    number.addEventListener('input', fn);
+    select.addEventListener('change', fn);
+  };
+  return field;
+}
+
 export function checkField(label, name, checked = false) {
   return h('label', { class: 'check' }, h('input', { type: 'checkbox', name, checked }), label);
 }
