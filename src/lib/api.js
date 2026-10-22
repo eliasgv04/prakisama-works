@@ -195,19 +195,21 @@ export async function saveProject(id, fields) {
 export const setProjectActive = setActiveFactory('projects');
 export const deleteProject = deleteFactory('projects');
 
-/** Ficha completa: la obra + su checklist de hitos + proveedores asignados + certificaciones. */
+/** Ficha completa: la obra + su checklist de hitos + proveedores asignados + certificaciones + gastos. */
 export async function getProject(id) {
-  const [project, milestones, providers, certifications] = await Promise.all([
+  const [project, milestones, providers, certifications, expenses] = await Promise.all([
     supabase.from('projects').select('*').eq('id', id).single(),
     supabase.from('project_milestones').select('*').eq('project_id', id),
     supabase.from('project_providers').select('*, provider:providers(id,name,active)').eq('project_id', id),
     supabase.from('project_certifications').select('*').eq('project_id', id).order('cert_date', { ascending: false }),
+    supabase.from('project_expenses').select(EXPENSE_SELECT).eq('project_id', id).order('expense_date', { ascending: false }).order('created_at', { ascending: false }),
   ]);
   return {
     project: orThrow(project),
     milestones: orThrow(milestones),
     providers: orThrow(providers),
     certifications: orThrow(certifications),
+    expenses: orThrow(expenses),
   };
 }
 
@@ -284,6 +286,23 @@ export async function updateCertification(id, patch) {
 }
 export async function deleteCertification(id) {
   const deleted = orThrow(await supabase.from('project_certifications').delete().eq('id', id).select());
+  if (deleted.length === 0) throw new Error('No tienes permiso para borrar esto.');
+}
+
+// ---------------------------------------------------------------------------
+// Gastos de la obra (de proveedores)
+// ---------------------------------------------------------------------------
+
+const EXPENSE_SELECT = '*, provider:providers(id,name,active)';
+
+export async function addExpense(projectId, fields) {
+  return orThrow(await supabase.from('project_expenses').insert({ ...fields, project_id: projectId }).select(EXPENSE_SELECT).single());
+}
+export async function updateExpense(id, patch) {
+  return orThrow(await supabase.from('project_expenses').update(patch).eq('id', id).select(EXPENSE_SELECT).single());
+}
+export async function deleteExpense(id) {
+  const deleted = orThrow(await supabase.from('project_expenses').delete().eq('id', id).select());
   if (deleted.length === 0) throw new Error('No tienes permiso para borrar esto.');
 }
 

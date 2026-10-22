@@ -237,6 +237,10 @@ input:focus, select:focus, textarea:focus { outline: none; border-color: var(--a
 .seg input:checked + span { background: var(--azul); border-color: var(--azul); color: #fff; }
 .seg input:focus-visible + span { box-shadow: 0 0 0 3px #07429040; }
 
+.pick-results { display: flex; flex-direction: column; gap: 4px; margin-top: 6px; }
+.pick-option { text-align: left; min-height: 44px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg); font: inherit; font-weight: 600; cursor: pointer; }
+.pick-option:hover, .pick-option:focus-visible { border-color: var(--azul); outline: none; }
+
 .photo-picker { display: flex; align-items: center; gap: 14px; }
 .photo-picker .thumb { width: 88px; height: 88px; }
 

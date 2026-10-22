@@ -94,6 +94,42 @@ export function periodField(label, { amount = null, unit = 'month', units = ['da
   return field;
 }
 
+/**
+ * Campo de elegir uno entre muchos con buscador (p. ej. 467 proveedores: un <select> no sirve).
+ * `options` = [[valor, etiqueta, texto extra para buscar?]]. Escribe en un <input hidden name>,
+ * así entra en readForm() como cualquier otro campo. Enseña como mucho `max` resultados.
+ */
+export function searchPickField(label, name, options, { value = '', placeholder = 'Escribe para buscar…', max = 8 } = {}) {
+  const hidden = h('input', { type: 'hidden', name, value: value ?? '' });
+  const search = h('input', { type: 'search', placeholder, autocomplete: 'off', 'aria-label': label });
+  const results = h('div', { class: 'pick-results' });
+  const labelOf = (v) => options.find(([optValue]) => optValue === v)?.[1] ?? '';
+  // Sin tildes ni mayúsculas: "garcia" encuentra "GARCÍA".
+  const norm = (s) => (s ?? '').normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase();
+  const index = options.map(([optValue, optLabel, extra]) => [optValue, optLabel, norm(`${optLabel} ${extra ?? ''}`)]);
+
+  function render() {
+    results.replaceChildren();
+    const words = norm(search.value).split(/\s+/).filter(Boolean);
+    if (words.length === 0) return;
+    const found = index.filter(([, , text]) => words.every((w) => text.includes(w)));
+    for (const [optValue, optLabel] of found.slice(0, max)) {
+      results.append(h('button', { type: 'button', class: 'pick-option', onclick: () => choose(optValue) }, optLabel));
+    }
+    if (found.length === 0) results.append(h('p', { class: 'muted small' }, 'Sin resultados.'));
+    else if (found.length > max) results.append(h('p', { class: 'muted small' }, `${found.length - max} más: sigue escribiendo para afinar.`));
+  }
+  function choose(optValue) {
+    hidden.value = optValue;
+    search.value = labelOf(optValue);
+    results.replaceChildren();
+  }
+  search.addEventListener('input', () => { hidden.value = ''; render(); });
+  if (value) search.value = labelOf(value);
+
+  return wrapField(label, h('div', { class: 'pick' }, hidden, search, results));
+}
+
 export function checkField(label, name, checked = false) {
   return h('label', { class: 'check' }, h('input', { type: 'checkbox', name, checked }), label);
 }

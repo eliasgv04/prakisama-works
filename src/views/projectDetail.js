@@ -1,14 +1,16 @@
 // Ficha de la obra: datos e importe, checklist de hitos con adjuntos, proveedores asignados
-// (con si han mandado su documentación) y certificaciones.
+// (con si han mandado su documentación), certificaciones y gastos.
 
 import { MILESTONE_KINDS } from '../lib/constants.js';
 import {
   addBankProduct,
   addCertification,
+  addExpense,
   addProjectProvider,
   deleteAttachment,
   deleteBankProduct,
   deleteCertification,
+  deleteExpense,
   getProject,
   listBanks,
   listBankProductsByProject,
@@ -19,6 +21,7 @@ import {
   uploadMilestoneAttachment,
   updateBankProduct,
   updateCertification,
+  updateExpense,
   updateProjectProvider,
 } from '../lib/api.js';
 import { dueStatus } from '../lib/dueStatus.js';
@@ -28,7 +31,7 @@ import { todayISO } from '../lib/dates.js';
 import { MAX_ATTACHMENT_BYTES, prepareAttachment } from '../lib/image.js';
 import { navigate } from '../router.js';
 import { accordion } from '../ui/accordion.js';
-import { button, chip, icon, iconButton, readForm, section, selectField, textField, toNum } from '../ui/components.js';
+import { button, chip, icon, iconButton, readForm, searchPickField, section, selectField, textField, toNum } from '../ui/components.js';
 import { avalDateFields, avalDatesText } from '../ui/avalFields.js';
 import { confirmDialog, h, openSheet, toast } from '../ui/dom.js';
 
@@ -41,7 +44,7 @@ export default async function projectDetail({ params }) {
   const node = h('div', { class: 'detail-grid' }, left, right);
 
   left.append(heroCard(project), milestonesCard(project, data.milestones), avalCard(project, avales, banks, data.milestones.find((m) => m.kind === 'recepcion_obra')?.done_date ?? ''));
-  right.append(providersCard(project, data.providers), certificationsCard(project, data.certifications));
+  right.append(providersCard(project, data.providers), certificationsCard(project, data.certifications), expensesCard(project, data.expenses));
   right.append(h('div', { class: 'spacer' }), button('Editar obra', { variant: 'ghost', block: true, iconName: 'edit', onClick: () => navigate(`/obras/${project.id}/editar`) }));
 
   return { title: project.name, hideTitle: true, wide: true, back: '/obras', tab: 'obras', node };
@@ -516,4 +519,100 @@ function openCertificationSheet(project, rows, onSaved, existing = null) {
     );
     return form;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Gastos: de un proveedor cualquiera (no hace falta tenerlo asignado a la obra), con buscador
+// ---------------------------------------------------------------------------
+
+function expensesCard(project, rows) {
+  const card = h('div', { class: 'card' });
+  const total = h('div', {});
+  const list = h('div', { class: 'stack tight' });
+  function render() {
+    total.replaceChildren();
+    if (rows.length) {
+      const sum = rows.reduce((acc, r) => acc + Number(r.amount), 0);
+      total.append(h('div', { class: 'muted small' }, `Total gastos (${rows.length})`), h('div', { class: 'big', style: 'margin-bottom:12px' }, fmtMoney(sum)));
+    }
+    list.replaceChildren();
+    if (rows.length === 0) list.append(h('p', { class: 'muted' }, 'Sin gastos registrados.'));
+    for (const row of rows) {
+      list.append(
+        h(
+          'div',
+          { class: 'record' },
+          h('div', { class: 'head' }, h('span', { class: 'strong' }, row.title), h('span', { class: 'strong' }, fmtMoney(row.amount))),
+          h('div', { class: 'muted small' }, [row.provider?.name ?? '(eliminado)', fmtDate(row.expense_date)].join(' · ')),
+          row.description ? h('p', { class: 'muted small', style: 'margin-top:4px;white-space:pre-wrap' }, row.description) : null,
+          h(
+            'div',
+            { class: 'btn-row', style: 'margin-top:8px' },
+            button('Editar', { small: true, variant: 'ghost', onClick: () => openExpenseSheet(project, rows, render, row) }),
+            button('Borrar', { small: true, variant: 'danger', onClick: async () => {
+              if (!(await confirmDialog({ title: '¿Borrar este gasto?', confirmText: 'Borrar', danger: true }))) return;
+              try {
+                await deleteExpense(row.id);
+                rows.splice(rows.indexOf(row), 1);
+                render();
+              } catch (err) {
+                toast(friendlyError(err), 'error');
+              }
+            } }),
+          ),
+        ),
+      );
+    }
+  }
+  render();
+  card.append(total, list, h('div', { style: 'margin-top:12px' }, button('Añadir gasto', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openExpenseSheet(project, rows, render) })));
+  return section('Gastos', card);
+}
+
+/** Sin `existing`: añade uno nuevo. Con `existing`: lo edita (mismo formulario, precargado). */
+function openExpenseSheet(project, rows, onSaved, existing = null) {
+  return openSheet(existing ? 'Editar gasto' : 'Añadir gasto', (close) =>
+    (async () => {
+      const all = await listProviders();
+      const options = all.filter((p) => p.active || p.id === existing?.provider_id).map((p) => [p.id, p.name, p.nif]);
+      if (options.length === 0) return h('p', { class: 'muted' }, 'Primero da de alta un proveedor en Listas.');
+      const provider = searchPickField('Proveedor', 'provider_id', options, { value: existing?.provider_id ?? '', placeholder: 'Buscar por nombre o NIF…' });
+      const title = textField('Título', 'title', { required: true, value: existing?.title ?? '' });
+      const amount = textField('Importe (€)', 'amount', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', required: true, value: existing?.amount ?? '' });
+      const date = textField('Fecha', 'expense_date', { type: 'date', required: true, value: existing?.expense_date ?? todayISO() });
+      const description = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Descripción (opcional)'), h('textarea', { name: 'description' }, existing?.description ?? ''));
+      const save = button(existing ? 'Guardar' : 'Añadir', { type: 'submit', block: true, iconName: 'check' });
+      const form = h(
+        'form',
+        {
+          class: 'stack',
+          onsubmit: async (event) => {
+            event.preventDefault();
+            const f = readForm(form);
+            if (!f.provider_id) return toast('Busca y elige el proveedor de la lista.', 'error');
+            if (!f.title || toNum(f.amount) == null || !f.expense_date) return toast('Rellena el título, el importe y la fecha.', 'error');
+            save.disabled = true;
+            try {
+              const fields = { provider_id: f.provider_id, title: f.title, description: f.description, amount: toNum(f.amount), expense_date: f.expense_date };
+              if (existing) Object.assign(existing, await updateExpense(existing.id, fields));
+              else rows.push(await addExpense(project.id, fields));
+              rows.sort((a, b) => (a.expense_date < b.expense_date ? 1 : a.expense_date > b.expense_date ? -1 : 0));
+              onSaved();
+              close(true);
+            } catch (err) {
+              toast(friendlyError(err), 'error');
+              save.disabled = false;
+            }
+          },
+        },
+        provider,
+        title,
+        amount,
+        date,
+        description,
+        save,
+      );
+      return form;
+    })(),
+  );
 }
