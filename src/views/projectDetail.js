@@ -294,15 +294,21 @@ function openAvalSheet(project, banks, avales, onSaved, receptionDefault, existi
 }
 
 // ---------------------------------------------------------------------------
-// Proveedores asignados: además, si han mandado su documentación
+// Proveedores asignados: además, si han mandado su documentación. Plegados por defecto (como la
+// formación del trabajador): cerrado solo enseña cuántos hay y cuántos deben documentación.
 // ---------------------------------------------------------------------------
 
 function providersCard(project, rows) {
   const card = h('div', { class: 'card' });
   const list = h('div', { class: 'stack tight' });
+  const empty = h('p', { class: 'muted' }, 'Sin proveedores asignados.');
+  const fold = accordion({ group: 'proveedores-obra', iconName: 'truck', title: 'Proveedores asignados', content: list });
   function render() {
+    empty.hidden = rows.length > 0;
+    fold.el.hidden = rows.length === 0;
+    const pending = rows.filter((r) => !r.documentation_received).length;
+    fold.set({ summary: [`${rows.length} en total`, pending ? `${pending} con documentación pendiente` : 'documentación al día'].join(' · '), warn: pending > 0 });
     list.replaceChildren();
-    if (rows.length === 0) list.append(h('p', { class: 'muted' }, 'Sin proveedores asignados.'));
     for (const row of rows) {
       const docChip = chip(row.documentation_received ? 'Documentación recibida' : 'Documentación pendiente', row.documentation_received ? 'ok' : 'soon');
       list.append(
@@ -351,7 +357,7 @@ function providersCard(project, rows) {
     }
   }
   render();
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir proveedor', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openAddProviderSheet(project, rows, render) })));
+  card.append(empty, fold.el, h('div', { style: 'margin-top:12px' }, button('Añadir proveedor', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openAddProviderSheet(project, rows, render) })));
   return section('Proveedores', card);
 }
 
