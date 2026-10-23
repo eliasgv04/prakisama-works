@@ -432,15 +432,26 @@ function openAddProviderSheet(project, rows, onAdded) {
 }
 
 // ---------------------------------------------------------------------------
-// Certificaciones: fecha, importe y fecha de pago (vacía = pendiente de cobro)
+// Certificaciones: fecha, importe y fecha de pago (vacía = pendiente de cobro). Plegadas por
+// defecto, como los proveedores: cerrado enseña el total certificado y lo que falta por cobrar.
 // ---------------------------------------------------------------------------
 
 function certificationsCard(project, rows) {
   const card = h('div', { class: 'card' });
   const list = h('div', { class: 'stack tight' });
+  const empty = h('p', { class: 'muted' }, 'Sin certificaciones registradas.');
+  const fold = accordion({ group: 'certificaciones-obra', iconName: 'euro', title: 'Certificaciones', content: list });
   function render() {
+    empty.hidden = rows.length > 0;
+    fold.el.hidden = rows.length === 0;
+    const total = rows.reduce((acc, r) => acc + Number(r.amount), 0);
+    const unpaid = rows.filter((r) => !r.payment_date);
+    const unpaidTotal = unpaid.reduce((acc, r) => acc + Number(r.amount), 0);
+    fold.set({
+      summary: [`${rows.length} · ${fmtMoney(total)}`, unpaid.length ? `${fmtMoney(unpaidTotal)} pendiente de cobro` : 'todo cobrado'].join(' · '),
+      warn: unpaid.length > 0,
+    });
     list.replaceChildren();
-    if (rows.length === 0) list.append(h('p', { class: 'muted' }, 'Sin certificaciones registradas.'));
     for (const row of rows) {
       list.append(
         h(
@@ -479,7 +490,7 @@ function certificationsCard(project, rows) {
     }
   }
   render();
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir certificación', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openCertificationSheet(project, rows, render) })));
+  card.append(empty, fold.el, h('div', { style: 'margin-top:12px' }, button('Añadir certificación', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openCertificationSheet(project, rows, render) })));
   return section('Certificaciones', card);
 }
 
