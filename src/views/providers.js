@@ -6,6 +6,7 @@ const { list, form } = makeEntityViews({
   plural: 'Proveedores',
   route: '/proveedores',
   iconName: 'truck',
+  pageSize: 30,
   nameField: 'name',
   nameLabel: 'Nombre',
   fields: [

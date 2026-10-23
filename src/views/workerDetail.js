@@ -21,10 +21,11 @@ import {
 } from '../lib/api.js';
 import { todayISO } from '../lib/dates.js';
 import { friendlyError } from '../lib/errors.js';
-import { fmtDate } from '../lib/format.js';
+import { fmtDate, fmtMoney } from '../lib/format.js';
 import { MAX_ATTACHMENT_BYTES, prepareAttachment } from '../lib/image.js';
 import { dueStatus } from '../lib/dueStatus.js';
 import { navigate } from '../router.js';
+import { accordion } from '../ui/accordion.js';
 import { button, chip, icon, iconButton, readForm, section, textField } from '../ui/components.js';
 import { confirmDialog, h, openSheet, toast } from '../ui/dom.js';
 
@@ -59,6 +60,7 @@ function heroCard(worker) {
     ['Categoría', worker.role],
     ['Nº afiliación S.S.', worker.social_security_number],
     ['Número de cuenta', worker.account_number],
+    ['Precio por hora', worker.hourly_rate != null ? `${fmtMoney(worker.hourly_rate)}/h` : null],
   ].filter(([, v]) => v);
   return h(
     'div',
@@ -175,13 +177,20 @@ function openCheckupSheet(worker, checkups, onSaved, existing = null) {
 // Formación: historial simple con certificado adjunto opcional
 // ---------------------------------------------------------------------------
 
+// Plegada por defecto: hay trabajadores (p. ej. administrativas) con muchas formaciones y la lista
+// abierta hacía la ficha larguísima. Cerrada solo enseña cuántas hay y la más reciente.
 function trainingsCard(worker, trainings) {
   const card = h('div', { class: 'card' });
   const list = h('div', { class: 'stack tight' });
+  const empty = h('p', { class: 'muted' }, 'Sin formación registrada.');
+  const fold = accordion({ group: 'formacion', iconName: 'file', title: 'Formaciones', content: list });
 
   async function render() {
+    empty.hidden = trainings.length > 0;
+    fold.el.hidden = trainings.length === 0;
+    const latest = trainings[0];
+    fold.set({ summary: latest ? `${trainings.length} en total · última: ${latest.name} (${fmtDate(latest.training_date)})` : '' });
     list.replaceChildren();
-    if (trainings.length === 0) list.append(h('p', { class: 'muted' }, 'Sin formación registrada.'));
     for (const t of trainings) {
       const row = h(
         'div',
@@ -242,7 +251,7 @@ function trainingsCard(worker, trainings) {
   }
   render();
 
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir formación', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openTrainingSheet(worker, trainings, render) })));
+  card.append(empty, fold.el, h('div', { style: 'margin-top:12px' }, button('Añadir formación', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openTrainingSheet(worker, trainings, render) })));
   return section('Formación', card);
 }
 

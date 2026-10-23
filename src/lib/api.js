@@ -195,13 +195,14 @@ export async function saveProject(id, fields) {
 export const setProjectActive = setActiveFactory('projects');
 export const deleteProject = deleteFactory('projects');
 
-/** Ficha completa: la obra + su checklist de hitos + proveedores asignados + certificaciones + gastos. */
+/** Ficha completa: la obra + su checklist de hitos + proveedores asignados + certificaciones + gastos + horas (coste de trabajadores). */
 export async function getProject(id) {
-  const [project, milestones, providers, certifications, expenses] = await Promise.all([
+  const [project, milestones, providers, certifications, hours, expenses] = await Promise.all([
     supabase.from('projects').select('*').eq('id', id).single(),
     supabase.from('project_milestones').select('*').eq('project_id', id),
     supabase.from('project_providers').select('*, provider:providers(id,name,active)').eq('project_id', id),
     supabase.from('project_certifications').select('*').eq('project_id', id).order('cert_date', { ascending: false }),
+    supabase.from('work_hours').select('id, work_date, hours, hourly_rate, total_cost, worker:workers(id,full_name,active)').eq('project_id', id).order('work_date', { ascending: false }),
     supabase.from('project_expenses').select(EXPENSE_SELECT).eq('project_id', id).order('expense_date', { ascending: false }).order('created_at', { ascending: false }),
   ]);
   return {
@@ -210,6 +211,7 @@ export async function getProject(id) {
     providers: orThrow(providers),
     certifications: orThrow(certifications),
     expenses: orThrow(expenses),
+    hours: orThrow(hours),
   };
 }
 

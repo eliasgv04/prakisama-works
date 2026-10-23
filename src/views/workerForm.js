@@ -9,7 +9,7 @@ import { friendlyError } from '../lib/errors.js';
 import { fmtDate } from '../lib/format.js';
 import { MAX_ATTACHMENT_BYTES, prepareAttachment } from '../lib/image.js';
 import { navigate } from '../router.js';
-import { areaField, button, readForm, section, textField } from '../ui/components.js';
+import { areaField, button, readForm, section, textField, toNum } from '../ui/components.js';
 import { confirmDialog, h, openSheet, toast } from '../ui/dom.js';
 import { removableRow, stagedSection } from '../ui/staging.js';
 
@@ -28,8 +28,9 @@ export default async function workerForm({ params }) {
   const role = textField('Categoría u oficio (opcional)', 'role', { value: w.role ?? '', placeholder: 'Ej.: oficial, peón, encargado' });
   const ssNumber = textField('Nº afiliación S.S. (opcional)', 'social_security_number', { value: w.social_security_number ?? '' });
   const accountNumber = textField('Número de cuenta (opcional)', 'account_number', { value: w.account_number ?? '' });
+  const hourlyRate = textField('Precio por hora (€, opcional)', 'hourly_rate', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', value: w.hourly_rate ?? '', hint: 'Se propone al apuntar sus horas; en cada registro se puede cambiar.' });
   const notes = areaField('Notas', 'notes', { value: w.notes ?? '' });
-  const basicFields = [name, nif, phone, role, ssNumber, accountNumber, notes];
+  const basicFields = [name, nif, phone, role, ssNumber, accountNumber, hourlyRate, notes];
   const readBasicFields = () => ({
     full_name: name.querySelector('input').value.trim() || null,
     nif: nif.querySelector('input').value.trim() || null,
@@ -37,6 +38,7 @@ export default async function workerForm({ params }) {
     role: role.querySelector('input').value.trim() || null,
     social_security_number: ssNumber.querySelector('input').value.trim() || null,
     account_number: accountNumber.querySelector('input').value.trim() || null,
+    hourly_rate: toNum(hourlyRate.querySelector('input').value.trim()),
     notes: notes.querySelector('textarea').value.trim() || null,
   });
 
@@ -56,7 +58,7 @@ export default async function workerForm({ params }) {
           if (!f.full_name) return toast('Escribe el nombre.', 'error');
           save.disabled = true;
           try {
-            const saved = await saveWorker(params.id, { full_name: f.full_name, nif: f.nif, phone: f.phone, role: f.role, social_security_number: f.social_security_number, account_number: f.account_number, notes: f.notes });
+            const saved = await saveWorker(params.id, { full_name: f.full_name, nif: f.nif, phone: f.phone, role: f.role, social_security_number: f.social_security_number, account_number: f.account_number, hourly_rate: toNum(f.hourly_rate), notes: f.notes });
             toast('Trabajador guardado', 'success');
             navigate(`/trabajadores/${saved.id}`);
           } catch (err) {

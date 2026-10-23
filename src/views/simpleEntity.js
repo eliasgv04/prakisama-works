@@ -23,6 +23,8 @@ import { confirmDialog, h, toast } from '../ui/dom.js';
  * @param {string} [cfg.deleteWarning]  mensaje del diálogo de confirmación al eliminar (por defecto, avisa de que si tiene algo asignado no se podrá)
  * @param {string} [cfg.tab]      pestaña activa en la barra (por defecto "listas")
  * @param {string|null} [cfg.listBack]  flecha "volver" de la lista (por defecto "/listas"; null = sin flecha, es una pestaña de nivel superior)
+ * @param {number} [cfg.pageSize]  si se pone, la lista enseña los resultados de N en N con un botón
+ *   "Mostrar N más" (proveedores: 467 de golpe hacían la pantalla eterna). Sin ponerlo, todos.
  * @param {boolean} [cfg.hasDetail]  true si `${route}/:id` es una ficha aparte del formulario de edición
  *   (como bancos, con `:id/editar` propio). Si es false (por defecto: proveedores no lo usan así,
  *   `${route}/:id` YA es el formulario), "volver" al editar no puede apuntar a `${route}/:id` —
@@ -39,31 +41,42 @@ export function makeEntityViews(cfg) {
     const all = await cfg.list();
     let text = '';
     let showInactive = false;
+    let limit = cfg.pageSize ?? Infinity;
     const listHost = h('div', { class: 'list-grid' });
+    const moreHost = h('div', {});
 
     function render() {
       listHost.replaceChildren();
+      moreHost.replaceChildren();
       const shown = all.filter((r) => (showInactive ? true : r.active)).filter((r) => !text || `${r[cfg.nameField]} ${subtitleOf(r)}`.toUpperCase().includes(text));
       if (shown.length === 0) {
         listHost.append(empty(all.length === 0 ? `Aún no hay ${cfg.plural.toLowerCase()}.` : 'No hay resultados.'));
         return;
       }
-      for (const row of shown) listHost.append(listItem({ href: `#${cfg.route}/${row.id}`, title: row[cfg.nameField], subtitle: subtitleOf(row), active: row.active, iconName: cfg.iconName }));
+      for (const row of shown.slice(0, limit)) listHost.append(listItem({ href: `#${cfg.route}/${row.id}`, title: row[cfg.nameField], subtitle: subtitleOf(row), active: row.active, iconName: cfg.iconName }));
+      if (shown.length > limit) {
+        moreHost.append(
+          h('p', { class: 'muted small', style: 'text-align:center' }, `Mostrando ${limit} de ${shown.length}`),
+          button(`Mostrar ${Math.min(cfg.pageSize, shown.length - limit)} más`, { variant: 'ghost', block: true, onClick: () => { limit += cfg.pageSize; render(); } }),
+        );
+      }
     }
+    // Al cambiar la búsqueda o el filtro se vuelve a la primera página.
+    const resetPage = () => { limit = cfg.pageSize ?? Infinity; };
 
     const search = h('input', {
       type: 'search',
       placeholder: `Buscar ${cfg.singular}…`,
       'aria-label': `Buscar ${cfg.singular}`,
       autocomplete: 'off',
-      oninput: (event) => { text = event.target.value.toUpperCase(); render(); },
+      oninput: (event) => { text = event.target.value.toUpperCase(); resetPage(); render(); },
     });
 
     const node = h('div', { class: 'stack has-fab' }, search);
     if (all.some((r) => !r.active)) {
-      node.append(h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: (event) => { showInactive = event.target.checked; render(); } }), `Mostrar ${cfg.plural.toLowerCase()} de baja`));
+      node.append(h('label', { class: 'check' }, h('input', { type: 'checkbox', onchange: (event) => { showInactive = event.target.checked; resetPage(); render(); } }), `Mostrar ${cfg.plural.toLowerCase()} de baja`));
     }
-    node.append(listHost);
+    node.append(listHost, moreHost);
     node.append(h('a', { class: 'fab', href: `#${cfg.route}/nuevo`, 'aria-label': `Añadir ${cfg.singular}` }, icon('plus')));
     render();
 

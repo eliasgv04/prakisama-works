@@ -1,5 +1,5 @@
 // Ficha de la obra: datos e importe, checklist de hitos con adjuntos, proveedores asignados
-// (con si han mandado su documentación), certificaciones y gastos.
+// (con si han mandado su documentación), certificaciones y gastos (proveedores, subcontratas, gasoil).
 
 import { MILESTONE_KINDS } from '../lib/constants.js';
 import {
@@ -26,7 +26,7 @@ import {
 } from '../lib/api.js';
 import { dueStatus } from '../lib/dueStatus.js';
 import { friendlyError } from '../lib/errors.js';
-import { fmtDate, fmtMoney, fmtPeriod } from '../lib/format.js';
+import { fmtDate, fmtHours, fmtMoney, fmtPeriod } from '../lib/format.js';
 import { todayISO } from '../lib/dates.js';
 import { MAX_ATTACHMENT_BYTES, prepareAttachment } from '../lib/image.js';
 import { navigate } from '../router.js';
@@ -44,7 +44,7 @@ export default async function projectDetail({ params }) {
   const node = h('div', { class: 'detail-grid' }, left, right);
 
   left.append(heroCard(project), milestonesCard(project, data.milestones), avalCard(project, avales, banks, data.milestones.find((m) => m.kind === 'recepcion_obra')?.done_date ?? ''));
-  right.append(providersCard(project, data.providers), certificationsCard(project, data.certifications), expensesCard(project, data.expenses));
+  right.append(providersCard(project, data.providers), certificationsCard(project, data.certifications), expensesCard(project, data.expenses, data.hours));
   right.append(h('div', { class: 'spacer' }), button('Editar obra', { variant: 'ghost', block: true, iconName: 'edit', onClick: () => navigate(`/obras/${project.id}/editar`) }));
 
   return { title: project.name, hideTitle: true, wide: true, back: '/obras', tab: 'obras', node };
@@ -522,33 +522,92 @@ function openCertificationSheet(project, rows, onSaved, existing = null) {
 }
 
 // ---------------------------------------------------------------------------
-// Gastos: de un proveedor cualquiera (no hace falta tenerlo asignado a la obra), con buscador
+// Gastos, en tres apartados plegables con su total (proveedores, subcontratas, gasoil) y el total
+// de la obra debajo. Proveedor y subcontrata: mismo formulario, se busca en la lista de proveedores
+// (no hace falta tenerlo asignado a la obra; desde la migración 10 las subcontratas también están
+// ahí). Gasoil: kms ida y vuelta × precio por km, el importe lo calcula Postgres (migración 15).
 // ---------------------------------------------------------------------------
 
-function expensesCard(project, rows) {
+const EXPENSE_CATEGORIES = {
+  proveedor: { title: 'Proveedores', iconName: 'truck', who: 'proveedor' },
+  subcontrata: { title: 'Subcontratas', iconName: 'users', who: 'subcontrata' },
+  gasoil: { title: 'Gasoil', iconName: 'euro', who: 'gasoil' },
+};
+
+const sumAmounts = (rows) => rows.reduce((acc, r) => acc + Number(r.amount), 0);
+const byDateDesc = (a, b) => (a.expense_date < b.expense_date ? 1 : a.expense_date > b.expense_date ? -1 : 0);
+const fmtNumber = (n, digits = 2) => Number(n).toLocaleString('es-ES', { maximumFractionDigits: digits });
+const round2 = (n) => Math.round(n * 100) / 100;
+
+function expensesCard(project, rows, hours) {
   const card = h('div', { class: 'card' });
-  const total = h('div', {});
+  const grandTotal = h('div', { style: 'margin-top:16px' });
+  const workersCost = hours.reduce((acc, r) => acc + Number(r.total_cost ?? 0), 0);
+  const renderGrandTotal = () => grandTotal.replaceChildren(h('div', { class: 'muted small' }, 'Gasto total de la obra'), h('div', { class: 'big' }, fmtMoney(sumAmounts(rows) + workersCost)));
+
+  const folds = Object.keys(EXPENSE_CATEGORIES).map((category) => expenseCategoryFold(project, rows, category, renderGrandTotal));
+  renderGrandTotal();
+  card.append(...folds, workersFold(hours, workersCost), grandTotal);
+  return section('Gastos', card);
+}
+
+/** Trabajadores: coste de las horas apuntadas en esta obra. Solo lectura: se apuntan desde "Horas". */
+function workersFold(hours, workersCost) {
+  const unpriced = hours.filter((r) => r.total_cost == null).length;
+  const totalHours = hours.reduce((acc, r) => acc + Number(r.hours), 0);
   const list = h('div', { class: 'stack tight' });
+  if (hours.length === 0) list.append(h('p', { class: 'muted' }, 'Sin horas registradas en esta obra.'));
+  for (const r of hours) {
+    list.append(
+      h(
+        'div',
+        { class: 'record' },
+        h('div', { class: 'head' }, h('span', { class: 'strong' }, r.worker?.full_name ?? '(trabajador eliminado)'), h('span', { class: 'strong' }, r.total_cost != null ? fmtMoney(r.total_cost) : 'Sin precio')),
+        h('div', { class: 'muted small' }, [fmtDate(r.work_date), fmtHours(r.hours), r.hourly_rate != null ? `${fmtMoney(r.hourly_rate)}/h` : null].filter(Boolean).join(' · ')),
+      ),
+    );
+  }
+  return accordion({
+    group: 'gastos',
+    sub: true,
+    iconName: 'clock',
+    title: 'Trabajadores',
+    summary: hours.length ? [`Total: ${fmtMoney(workersCost)}`, fmtHours(totalHours), unpriced ? `${unpriced} sin precio` : null].filter(Boolean).join(' · ') : 'Sin horas',
+    warn: unpriced > 0,
+    content: [list, h('p', { class: 'muted small', style: 'margin-top:12px' }, 'Se apuntan desde la pestaña Horas, con el precio por hora de cada trabajador.')],
+  }).el;
+}
+
+function expenseCategoryFold(project, rows, category, onChange) {
+  const cfg = EXPENSE_CATEGORIES[category];
+  const isGasoil = category === 'gasoil';
+  const list = h('div', { class: 'stack tight' });
+  const addButton = button(`Añadir gasto de ${cfg.who}`, { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openExpenseSheet(project, rows, category, render) });
+  const fold = accordion({ group: 'gastos', sub: true, iconName: cfg.iconName, title: cfg.title, content: [list, h('div', { style: 'margin-top:12px' }, addButton)] });
+
   function render() {
-    total.replaceChildren();
-    if (rows.length) {
-      const sum = rows.reduce((acc, r) => acc + Number(r.amount), 0);
-      total.append(h('div', { class: 'muted small' }, `Total gastos (${rows.length})`), h('div', { class: 'big', style: 'margin-bottom:12px' }, fmtMoney(sum)));
-    }
+    const mine = rows.filter((r) => r.category === category);
+    fold.set({ summary: mine.length ? `Total: ${fmtMoney(sumAmounts(mine))} · ${mine.length} ${mine.length === 1 ? 'gasto' : 'gastos'}` : 'Sin gastos' });
     list.replaceChildren();
-    if (rows.length === 0) list.append(h('p', { class: 'muted' }, 'Sin gastos registrados.'));
-    for (const row of rows) {
+    if (mine.length === 0) list.append(h('p', { class: 'muted' }, 'Sin gastos registrados.'));
+    for (const row of mine) {
       list.append(
         h(
           'div',
           { class: 'record' },
-          h('div', { class: 'head' }, h('span', { class: 'strong' }, row.title), h('span', { class: 'strong' }, fmtMoney(row.amount))),
-          h('div', { class: 'muted small' }, [row.provider?.name ?? '(eliminado)', fmtDate(row.expense_date)].join(' · ')),
+          h('div', { class: 'head' }, h('span', { class: 'strong' }, isGasoil ? fmtDate(row.expense_date) : row.title), h('span', { class: 'strong' }, fmtMoney(row.amount))),
+          h(
+            'div',
+            { class: 'muted small' },
+            isGasoil
+              ? `${fmtNumber(row.km)} km ida y vuelta × ${fmtNumber(row.km_price, 4)} €/km`
+              : [row.provider?.name ?? '(eliminado)', fmtDate(row.expense_date), row.invoice_number ? `factura ${row.invoice_number}` : null].filter(Boolean).join(' · '),
+          ),
           row.description ? h('p', { class: 'muted small', style: 'margin-top:4px;white-space:pre-wrap' }, row.description) : null,
           h(
             'div',
             { class: 'btn-row', style: 'margin-top:8px' },
-            button('Editar', { small: true, variant: 'ghost', onClick: () => openExpenseSheet(project, rows, render, row) }),
+            button('Editar', { small: true, variant: 'ghost', onClick: () => openExpenseSheet(project, rows, category, render, row) }),
             button('Borrar', { small: true, variant: 'danger', onClick: async () => {
               if (!(await confirmDialog({ title: '¿Borrar este gasto?', confirmText: 'Borrar', danger: true }))) return;
               try {
@@ -563,23 +622,21 @@ function expensesCard(project, rows) {
         ),
       );
     }
+    onChange();
   }
   render();
-  card.append(total, list, h('div', { style: 'margin-top:12px' }, button('Añadir gasto', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openExpenseSheet(project, rows, render) })));
-  return section('Gastos', card);
+  return fold.el;
 }
 
-/** Sin `existing`: añade uno nuevo. Con `existing`: lo edita (mismo formulario, precargado). */
-function openExpenseSheet(project, rows, onSaved, existing = null) {
-  return openSheet(existing ? 'Editar gasto' : 'Añadir gasto', (close) =>
+/** Sin `existing`: añade uno nuevo al apartado `category`. Con `existing`: lo edita (mismo formulario, precargado). */
+function openExpenseSheet(project, rows, category, onSaved, existing = null) {
+  const isGasoil = category === 'gasoil';
+  const label = `gasto de ${EXPENSE_CATEGORIES[category].who}`;
+  return openSheet(existing ? `Editar ${label}` : `Añadir ${label}`, (close) =>
     (async () => {
-      const all = await listProviders();
-      const options = all.filter((p) => p.active || p.id === existing?.provider_id).map((p) => [p.id, p.name, p.nif]);
-      if (options.length === 0) return h('p', { class: 'muted' }, 'Primero da de alta un proveedor en Listas.');
-      const provider = searchPickField('Proveedor', 'provider_id', options, { value: existing?.provider_id ?? '', placeholder: 'Buscar por nombre o NIF…' });
-      const title = textField('Título', 'title', { required: true, value: existing?.title ?? '' });
-      const amount = textField('Importe (€)', 'amount', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', required: true, value: existing?.amount ?? '' });
-      const date = textField('Fecha', 'expense_date', { type: 'date', required: true, value: existing?.expense_date ?? todayISO() });
+      const date = textField(isGasoil ? 'Día' : 'Fecha', 'expense_date', { type: 'date', required: true, value: existing?.expense_date ?? todayISO() });
+      const specific = isGasoil ? gasoilFields(existing, date) : await providerExpenseFields(category, existing, date);
+      if (specific.unavailable) return specific.unavailable;
       const description = h('label', { class: 'field' }, h('span', { class: 'field-label' }, 'Descripción (opcional)'), h('textarea', { name: 'description' }, existing?.description ?? ''));
       const save = button(existing ? 'Guardar' : 'Añadir', { type: 'submit', block: true, iconName: 'check' });
       const form = h(
@@ -589,14 +646,15 @@ function openExpenseSheet(project, rows, onSaved, existing = null) {
           onsubmit: async (event) => {
             event.preventDefault();
             const f = readForm(form);
-            if (!f.provider_id) return toast('Busca y elige el proveedor de la lista.', 'error');
-            if (!f.title || toNum(f.amount) == null || !f.expense_date) return toast('Rellena el título, el importe y la fecha.', 'error');
+            const read = specific.read(f);
+            if (typeof read === 'string') return toast(read, 'error');
+            if (!f.expense_date) return toast('Indica la fecha.', 'error');
             save.disabled = true;
             try {
-              const fields = { provider_id: f.provider_id, title: f.title, description: f.description, amount: toNum(f.amount), expense_date: f.expense_date };
+              const fields = { category, expense_date: f.expense_date, description: f.description, ...read };
               if (existing) Object.assign(existing, await updateExpense(existing.id, fields));
               else rows.push(await addExpense(project.id, fields));
-              rows.sort((a, b) => (a.expense_date < b.expense_date ? 1 : a.expense_date > b.expense_date ? -1 : 0));
+              rows.sort(byDateDesc);
               onSaved();
               close(true);
             } catch (err) {
@@ -605,14 +663,54 @@ function openExpenseSheet(project, rows, onSaved, existing = null) {
             }
           },
         },
-        provider,
-        title,
-        amount,
-        date,
+        ...specific.nodes,
         description,
         save,
       );
       return form;
     })(),
   );
+}
+
+/** Proveedor / subcontrata: buscador en la lista de proveedores, título, importe, fecha y nº de factura. */
+async function providerExpenseFields(category, existing, date) {
+  const all = await listProviders();
+  const options = all.filter((p) => p.active || p.id === existing?.provider_id).map((p) => [p.id, p.name, p.nif]);
+  if (options.length === 0) return { unavailable: h('p', { class: 'muted' }, 'Primero da de alta un proveedor en Listas.') };
+  const who = category === 'subcontrata' ? 'Subcontrata' : 'Proveedor';
+  const provider = searchPickField(who, 'provider_id', options, { value: existing?.provider_id ?? '', placeholder: 'Buscar por nombre o NIF…' });
+  const title = textField('Título', 'title', { required: true, value: existing?.title ?? '' });
+  const amount = textField('Importe (€)', 'amount', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', required: true, value: existing?.amount ?? '' });
+  const invoiceNumber = textField('Nº de factura (opcional)', 'invoice_number', { value: existing?.invoice_number ?? '' });
+  return {
+    nodes: [provider, title, amount, h('div', { class: 'row2' }, date, invoiceNumber)],
+    read: (f) => {
+      if (!f.provider_id) return `Busca y elige la ${who.toLowerCase()} de la lista.`;
+      if (!f.title || toNum(f.amount) == null) return 'Rellena el título y el importe.';
+      return { provider_id: f.provider_id, title: f.title, amount: toNum(f.amount), invoice_number: f.invoice_number, km: null, km_price: null };
+    },
+  };
+}
+
+/** Gasoil: kms ida y vuelta × precio por km. El total se ve al momento; el que se guarda lo recalcula Postgres. */
+function gasoilFields(existing, date) {
+  const km = textField('Kms ida y vuelta', 'km', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', required: true, value: existing?.km ?? '' });
+  const price = textField('Precio por km (€)', 'km_price', { type: 'number', inputmode: 'decimal', min: 0, step: '0.0001', required: true, value: existing?.km_price ?? '' });
+  const preview = h('div', {});
+  const update = () => {
+    const k = toNum(km.querySelector('input').value);
+    const p = toNum(price.querySelector('input').value);
+    preview.replaceChildren(h('div', { class: 'muted small' }, 'Total'), h('div', { class: 'big' }, k != null && p != null ? fmtMoney(round2(k * p)) : '—'));
+  };
+  km.addEventListener('input', update);
+  price.addEventListener('input', update);
+  update();
+  return {
+    nodes: [date, h('div', { class: 'row2' }, km, price), preview],
+    read: (f) => {
+      if (toNum(f.km) == null || toNum(f.km_price) == null) return 'Rellena los kms y el precio.';
+      // amount lo recalcula el trigger; se manda igualmente para cumplir el NOT NULL de la columna.
+      return { provider_id: null, title: null, invoice_number: null, km: toNum(f.km), km_price: toNum(f.km_price), amount: round2(toNum(f.km) * toNum(f.km_price)) };
+    },
+  };
 }
