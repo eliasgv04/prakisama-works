@@ -20,7 +20,7 @@ import {
 } from '../lib/api.js';
 import { addPeriod, todayISO } from '../lib/dates.js';
 import { friendlyError } from '../lib/errors.js';
-import { fmtDate, fmtMoney, fmtPeriod } from '../lib/format.js';
+import { certName, fmtDate, fmtMoney, fmtPeriod } from '../lib/format.js';
 import { MAX_ATTACHMENT_BYTES, prepareAttachment } from '../lib/image.js';
 import { navigate } from '../router.js';
 import { accordion } from '../ui/accordion.js';
@@ -190,7 +190,7 @@ export default async function projectForm({ params }) {
   const certificationsCardEl = stagedSection(
     'Añadir certificación',
     stagedCertifications,
-    (c, remove) => removableRow(fmtMoney(c.amount), `${fmtDate(c.cert_date)} · ${c.payment_date ? `cobrada el ${fmtDate(c.payment_date)}` : 'pendiente de cobro'}`, remove),
+    (c, remove) => removableRow(certName(c), `${fmtMoney(c.amount)} · ${fmtDate(c.cert_date)} · ${c.payment_date ? `cobrada el ${fmtDate(c.payment_date)}` : 'pendiente de cobro'}`, remove),
     () => openStagedCertificationSheet(stagedCertifications, certificationsCardEl.render),
   );
 
@@ -378,6 +378,7 @@ function openStagedPickSheet(title, fieldLabel, options, staged, onAdded, emptyM
 
 function openStagedCertificationSheet(list, onAdded) {
   return openSheet('Añadir certificación', (close) => {
+    const name = textField('Nombre', 'name', { required: true, value: '', placeholder: 'Ej.: Certificación nº 3 – octubre' });
     const date = textField('Fecha', 'cert_date', { type: 'date', required: true, value: todayISO() });
     const amount = textField('Importe (€)', 'amount', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', required: true });
     const paid = h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'paid' }), 'Ya está cobrada');
@@ -393,12 +394,13 @@ function openStagedCertificationSheet(list, onAdded) {
         onsubmit: (event) => {
           event.preventDefault();
           const f = readForm(form);
-          if (!f.cert_date || toNum(f.amount) == null) return toast('Rellena la fecha y el importe.', 'error');
-          list.push({ cert_date: f.cert_date, amount: toNum(f.amount), payment_date: f.paid ? f.payment_date : null, notes: f.notes });
+          if (!f.name || !f.cert_date || toNum(f.amount) == null) return toast('Rellena el nombre, la fecha y el importe.', 'error');
+          list.push({ name: f.name, cert_date: f.cert_date, amount: toNum(f.amount), payment_date: f.paid ? f.payment_date : null, notes: f.notes });
           onAdded();
           close(true);
         },
       },
+      name,
       date,
       amount,
       paid,

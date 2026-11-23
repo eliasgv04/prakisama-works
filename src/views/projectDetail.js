@@ -26,26 +26,32 @@ import {
 } from '../lib/api.js';
 import { dueStatus } from '../lib/dueStatus.js';
 import { friendlyError } from '../lib/errors.js';
-import { fmtDate, fmtHours, fmtMoney, fmtPeriod } from '../lib/format.js';
+import { certName, fmtDate, fmtHours, fmtMoney, fmtPeriod } from '../lib/format.js';
 import { todayISO } from '../lib/dates.js';
 import { MAX_ATTACHMENT_BYTES, prepareAttachment } from '../lib/image.js';
 import { navigate } from '../router.js';
 import { accordion } from '../ui/accordion.js';
-import { button, chip, icon, iconButton, readForm, searchPickField, section, selectField, textField, toNum } from '../ui/components.js';
+import { button, chip, icon, readForm, searchPickField, selectField, textField, toNum } from '../ui/components.js';
+import { actionButton, cardActions, deleteLink, detailHead, linkButton, panel, panelText, panelValue, record, records } from '../ui/panel.js';
 import { avalDateFields, avalDatesText } from '../ui/avalFields.js';
-import { confirmDialog, h, openSheet, toast } from '../ui/dom.js';
+import { h, openSheet, toast } from '../ui/dom.js';
 
 export default async function projectDetail({ params }) {
   const [data, avales, banks] = await Promise.all([getProject(params.id), listBankProductsByProject(params.id), listBanks()]);
   const { project } = data;
 
-  const left = h('div', { class: 'col' });
-  const right = h('div', { class: 'col' });
-  const node = h('div', { class: 'detail-grid' }, left, right);
-
-  left.append(heroCard(project), milestonesCard(project, data.milestones), avalCard(project, avales, banks, data.milestones.find((m) => m.kind === 'recepcion_obra')?.done_date ?? ''));
-  right.append(providersCard(project, data.providers), certificationsCard(project, data.certifications), expensesCard(project, data.expenses, data.hours));
-  right.append(h('div', { class: 'spacer' }), button('Editar obra', { variant: 'ghost', block: true, iconName: 'edit', onClick: () => navigate(`/obras/${project.id}/editar`) }));
+  // Por filas (dos tarjetas por fila en pantalla ancha, una en el móvil): aval | proveedores,
+  // certificaciones | gastos, y los hitos a todo el ancho. Las tarjetas de una fila miden lo mismo.
+  const grid = h(
+    'div',
+    { class: 'detail-grid' },
+    avalCard(project, avales, banks, data.milestones.find((m) => m.kind === 'recepcion_obra')?.done_date ?? ''),
+    providersCard(project, data.providers),
+    certificationsCard(project, data.certifications),
+    expensesCard(project, data.expenses, data.hours),
+    milestonesCard(project, data.milestones),
+  );
+  const node = h('div', {}, heroCard(project), grid);
 
   return { title: project.name, hideTitle: true, wide: true, back: '/obras', tab: 'obras', node };
 }
@@ -53,31 +59,24 @@ export default async function projectDetail({ params }) {
 // ---------------------------------------------------------------------------
 
 function heroCard(project) {
-  const rows = [
-    ['Referencia', project.reference],
-    ['Inicio', project.start_date ? fmtDate(project.start_date) : null],
-    [project.extended_end_date ? 'Finalización original' : 'Finalización', project.end_date ? fmtDate(project.end_date) : null],
-    ['Prórroga', project.extension_amount != null ? fmtPeriod(project.extension_amount, project.extension_unit) : null],
-    ['Finalización prorrogada', project.extended_end_date ? fmtDate(project.extended_end_date) : null],
-    ['Base imponible', project.tax_base != null ? fmtMoney(project.tax_base) : null],
-    ['IVA', project.vat_rate != null ? `${project.vat_rate}%` : null],
-  ].filter(([, value]) => value);
-
-  return h(
-    'div',
-    { class: 'card' },
-    h(
-      'div',
-      { class: 'hero' },
-      h('div', { class: 'thumb' }, icon('clipboard', 30)),
-      h('div', { class: 'grow' }, h('h2', {}, project.name), project.active ? null : chip('De baja', 'neutral')),
-      iconButton('edit', 'Editar obra', () => navigate(`/obras/${project.id}/editar`)),
-    ),
-    h('div', { class: 'spacer' }),
-    project.total_amount != null ? h('div', {}, h('div', { class: 'muted small' }, 'Importe total'), h('div', { class: 'big' }, fmtMoney(project.total_amount))) : null,
-    rows.length ? h('dl', { class: 'kv', style: 'margin-top:12px' }, rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])) : null,
-    project.notes ? h('p', { class: 'muted', style: 'margin-top:10px;white-space:pre-wrap' }, project.notes) : null,
-  );
+  return detailHead({
+    iconName: 'clipboard',
+    title: project.name,
+    chip: project.active ? null : chip('De baja', 'neutral'),
+    editLabel: 'Editar obra',
+    onEdit: () => navigate(`/obras/${project.id}/editar`),
+    rows: [
+      ['Importe total', project.total_amount != null ? fmtMoney(project.total_amount) : null],
+      ['Base imponible', project.tax_base != null ? fmtMoney(project.tax_base) : null],
+      ['IVA', project.vat_rate != null ? `${project.vat_rate}%` : null],
+      ['Referencia', project.reference],
+      ['Inicio', project.start_date ? fmtDate(project.start_date) : null],
+      [project.extended_end_date ? 'Finalización original' : 'Finalización', project.end_date ? fmtDate(project.end_date) : null],
+      ['Prórroga', project.extension_amount != null ? fmtPeriod(project.extension_amount, project.extension_unit) : null],
+      ['Finalización prorrogada', project.extended_end_date ? fmtDate(project.extended_end_date) : null],
+    ],
+    notes: project.notes,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -88,20 +87,22 @@ function heroCard(project) {
 function milestonesCard(project, milestones) {
   const order = Object.keys(MILESTONE_KINDS);
   const sorted = [...milestones].sort((a, b) => order.indexOf(a.kind) - order.indexOf(b.kind));
-  const done = sorted.filter((m) => m.done_date).length;
-  const subs = sorted.map((m) => milestoneRow(project, m));
-  const card = accordion({
-    group: 'top',
-    iconName: 'file',
-    title: 'Hitos y documentación',
-    summary: `${done} de ${sorted.length} hechos`,
-    warn: done < sorted.length,
-    content: subs.map((s) => s.el),
-  });
-  return section('Hitos y documentación', card.el);
+  const chipHost = h('span', {});
+  const summary = h('div', {});
+  // Al guardar un hito se recalcula el resumen de arriba (cuántos hechos).
+  const refresh = () => {
+    const done = sorted.filter((m) => m.done_date).length;
+    chipHost.replaceChildren(done === sorted.length ? chip('Completo', 'ok') : chip('Pendientes', 'soon'));
+    summary.replaceChildren(panelValue(`${done} de ${sorted.length}`), panelText('hitos hechos. Abre cada uno para poner la fecha, notas y adjuntos.'));
+  };
+  const subs = sorted.map((m) => milestoneRow(project, m, refresh));
+  refresh();
+  const card = panel('Hitos y documentación', chipHost, summary, h('div', { class: 'folds fold-grid' }, subs.map((sub) => sub.el)));
+  card.classList.add('full');
+  return card;
 }
 
-function milestoneRow(project, milestone) {
+function milestoneRow(project, milestone, onSaved = () => {}) {
   const describe = (m) => ({ summary: m.done_date ? `Hecho el ${fmtDate(m.done_date)}` : 'Pendiente', warn: !m.done_date, badge: chip(m.done_date ? 'Hecho' : 'Pendiente', m.done_date ? 'ok' : 'neutral') });
 
   const dateInput = h('input', { type: 'date', value: milestone.done_date ?? '' });
@@ -166,6 +167,7 @@ function milestoneRow(project, milestone) {
       const updated = await saveMilestone(milestone.id, patch);
       Object.assign(milestone, updated);
       card.set(describe(milestone));
+      onSaved();
       toast('Guardado', 'success');
     } catch (err) {
       toast(friendlyError(err), 'error');
@@ -198,52 +200,39 @@ function milestoneRow(project, milestone) {
 const AVAL_STATUS_LABEL = { ok: 'Al día', soon: 'Próximo', overdue: 'Vencido' };
 
 function avalCard(project, avales, banks, receptionDefault) {
-  const card = h('div', { class: 'card' });
-  const list = h('div', { class: 'stack tight' });
+  const chipHost = h('span', {});
+  const summary = h('div', {});
+  const list = records();
+  const card = panel('Aval', chipHost, summary, list, cardActions(actionButton('Añadir aval', 'plus', () => openAvalSheet(project, banks, avales, render, receptionDefault), '')));
 
   function render() {
-    list.replaceChildren();
-    if (avales.length === 0) list.append(h('p', { class: 'muted' }, 'Sin aval registrado.'));
-    for (const a of avales) {
-      const status = dueStatus(a.end_date);
-      list.append(
-        h(
-          'div',
-          { class: 'record' },
-          h('div', { class: 'head' }, h('span', { class: 'strong' }, a.name), status ? chip(AVAL_STATUS_LABEL[status], status) : null),
-          h(
-            'div',
-            { class: 'muted small' },
-            [a.bank?.name, a.amount != null ? fmtMoney(a.amount) : null, ...avalDatesText(a)].filter(Boolean).join(' · '),
-          ),
-          a.return_requested_date ? h('div', { class: 'muted small' }, `Devolución solicitada el ${fmtDate(a.return_requested_date)}`) : null,
-          h(
-            'div',
-            { class: 'btn-row', style: 'margin-top:8px' },
-            button('Editar', { small: true, variant: 'ghost', onClick: () => openAvalSheet(project, banks, avales, render, receptionDefault, a) }),
-            button('Borrar', {
-              small: true,
-              variant: 'danger',
-              onClick: async () => {
-                if (!(await confirmDialog({ title: '¿Borrar este aval?', confirmText: 'Borrar', danger: true }))) return;
-                try {
-                  await deleteBankProduct(a.id);
-                  avales.splice(avales.indexOf(a), 1);
-                  render();
-                } catch (err) {
-                  toast(friendlyError(err), 'error');
-                }
-              },
-            }),
-          ),
-        ),
-      );
-    }
+    const statuses = avales.map((a) => dueStatus(a.end_date)).filter(Boolean);
+    const worst = ['overdue', 'soon', 'ok'].find((s) => statuses.includes(s));
+    const total = avales.reduce((acc, a) => acc + Number(a.amount ?? 0), 0);
+    chipHost.replaceChildren(worst ? chip(AVAL_STATUS_LABEL[worst], worst) : '');
+    summary.replaceChildren(
+      panelValue(avales.length ? fmtMoney(total) : null, 'Sin aval'),
+      panelText(avales.length ? [...new Set(avales.map((a) => a.bank?.name).filter(Boolean))].join(', ') || `${avales.length} aval${avales.length === 1 ? '' : 'es'}` : 'Añádelo si la obra tiene aval bancario.'),
+    );
+    list.replaceChildren(
+      ...avales.map((a) => {
+        const status = dueStatus(a.end_date);
+        return record({
+          title: a.name,
+          aside: status ? chip(AVAL_STATUS_LABEL[status], status) : null,
+          meta: [a.bank?.name, a.amount != null ? fmtMoney(a.amount) : null, ...avalDatesText(a), a.return_requested_date ? `devolución solicitada el ${fmtDate(a.return_requested_date)}` : null]
+            .filter(Boolean)
+            .join(' · '),
+          actions: [
+            linkButton('Editar', 'edit', () => openAvalSheet(project, banks, avales, render, receptionDefault, a)),
+            deleteLink('este aval', () => deleteBankProduct(a.id), () => { avales.splice(avales.indexOf(a), 1); render(); }),
+          ],
+        });
+      }),
+    );
   }
   render();
-
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir aval', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openAvalSheet(project, banks, avales, render, receptionDefault) })));
-  return section('Aval', card);
+  return card;
 }
 
 function openAvalSheet(project, banks, avales, onSaved, receptionDefault, existing = null) {
@@ -299,40 +288,31 @@ function openAvalSheet(project, banks, avales, onSaved, receptionDefault, existi
 // ---------------------------------------------------------------------------
 
 function providersCard(project, rows) {
-  const card = h('div', { class: 'card' });
-  const list = h('div', { class: 'stack tight' });
-  const empty = h('p', { class: 'muted' }, 'Sin proveedores asignados.');
-  const fold = accordion({ group: 'proveedores-obra', iconName: 'truck', title: 'Proveedores asignados', content: list });
+  const chipHost = h('span', {});
+  const summary = h('div', {});
+  const list = records();
+  const fold = accordion({ group: 'proveedores-obra', iconName: 'truck', title: 'Ver proveedores', content: list });
+  const folds = h('div', { class: 'folds' }, fold.el);
+  const card = panel('Proveedores', chipHost, summary, folds, cardActions(actionButton('Añadir proveedor', 'plus', () => openAddProviderSheet(project, rows, render), '')));
+
   function render() {
-    empty.hidden = rows.length > 0;
-    fold.el.hidden = rows.length === 0;
+    folds.hidden = rows.length === 0;
     const pending = rows.filter((r) => !r.documentation_received).length;
-    fold.set({ summary: [`${rows.length} en total`, pending ? `${pending} con documentación pendiente` : 'documentación al día'].join(' · '), warn: pending > 0 });
-    list.replaceChildren();
-    for (const row of rows) {
-      const docChip = chip(row.documentation_received ? 'Documentación recibida' : 'Documentación pendiente', row.documentation_received ? 'ok' : 'soon');
-      list.append(
-        h(
-          'div',
-          { class: 'record' },
-          h(
-            'div',
-            { class: 'head' },
-            h('span', { class: 'strong' }, row.provider?.name ?? '(eliminado)'),
-            h('button', { type: 'button', class: 'icon-btn', 'aria-label': 'Quitar', onclick: async () => {
-              try {
-                await removeProjectProvider(row.id);
-                rows.splice(rows.indexOf(row), 1);
-                render();
-              } catch (err) {
-                toast(friendlyError(err), 'error');
-              }
-            } }, icon('x', 18)),
-          ),
-          h('div', { style: 'margin-top:6px' }, docChip),
-          h(
+    chipHost.replaceChildren(rows.length ? (pending ? chip('Documentación pendiente', 'soon') : chip('Documentación al día', 'ok')) : '');
+    summary.replaceChildren(
+      panelValue(rows.length ? `${rows.length} ${rows.length === 1 ? 'proveedor' : 'proveedores'}` : null, 'Sin proveedores'),
+      panelText(rows.length ? (pending ? `${pending} sin mandar la documentación.` : 'Todos han mandado la documentación.') : 'Asigna los proveedores que trabajan en esta obra.'),
+    );
+    fold.set({ summary: `${rows.length} en total`, warn: pending > 0 });
+    list.replaceChildren(
+      ...rows.map((row) =>
+        record({
+          title: row.provider?.name ?? '(eliminado)',
+          aside: chip(row.documentation_received ? 'Recibida' : 'Pendiente', row.documentation_received ? 'ok' : 'soon'),
+          text: row.notes,
+          extra: h(
             'label',
-            { class: 'check', style: 'margin-top:8px' },
+            { class: 'check' },
             h('input', {
               type: 'checkbox',
               checked: row.documentation_received,
@@ -350,15 +330,16 @@ function providersCard(project, rows) {
             }),
             'Ha mandado la documentación',
           ),
-          row.notes ? h('p', { class: 'muted small', style: 'margin-top:4px' }, row.notes) : null,
-          h('div', { class: 'btn-row', style: 'margin-top:8px' }, button('Editar', { small: true, variant: 'ghost', onClick: () => openEditProjectProviderSheet(row, render) })),
-        ),
-      );
-    }
+          actions: [
+            linkButton('Editar', 'edit', () => openEditProjectProviderSheet(row, render)),
+            deleteLink('este proveedor de la obra', () => removeProjectProvider(row.id), () => { rows.splice(rows.indexOf(row), 1); render(); }, { label: 'Quitar' }),
+          ],
+        }),
+      ),
+    );
   }
   render();
-  card.append(empty, fold.el, h('div', { style: 'margin-top:12px' }, button('Añadir proveedor', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openAddProviderSheet(project, rows, render) })));
-  return section('Proveedores', card);
+  return card;
 }
 
 /** Asignación ya hecha: si ha mandado la documentación, en qué fecha, y notas. */
@@ -437,66 +418,57 @@ function openAddProviderSheet(project, rows, onAdded) {
 // ---------------------------------------------------------------------------
 
 function certificationsCard(project, rows) {
-  const card = h('div', { class: 'card' });
-  const list = h('div', { class: 'stack tight' });
-  const empty = h('p', { class: 'muted' }, 'Sin certificaciones registradas.');
-  const fold = accordion({ group: 'certificaciones-obra', iconName: 'euro', title: 'Certificaciones', content: list });
+  const chipHost = h('span', {});
+  const summary = h('div', {});
+  const list = records();
+  const fold = accordion({ group: 'certificaciones-obra', iconName: 'euro', title: 'Ver certificaciones', content: list });
+  const folds = h('div', { class: 'folds' }, fold.el);
+  const card = panel('Certificaciones', chipHost, summary, folds, cardActions(actionButton('Añadir certificación', 'plus', () => openCertificationSheet(project, rows, render), '')));
+
   function render() {
-    empty.hidden = rows.length > 0;
-    fold.el.hidden = rows.length === 0;
+    folds.hidden = rows.length === 0;
     const total = rows.reduce((acc, r) => acc + Number(r.amount), 0);
     const unpaid = rows.filter((r) => !r.payment_date);
     const unpaidTotal = unpaid.reduce((acc, r) => acc + Number(r.amount), 0);
-    fold.set({
-      summary: [`${rows.length} · ${fmtMoney(total)}`, unpaid.length ? `${fmtMoney(unpaidTotal)} pendiente de cobro` : 'todo cobrado'].join(' · '),
-      warn: unpaid.length > 0,
-    });
-    list.replaceChildren();
-    for (const row of rows) {
-      list.append(
-        h(
-          'div',
-          { class: 'record' },
-          h('div', { class: 'head' }, h('span', { class: 'strong' }, fmtMoney(row.amount)), h('span', { class: 'muted small' }, fmtDate(row.cert_date))),
-          h('div', { style: 'margin-top:6px' }, chip(row.payment_date ? `Cobrada el ${fmtDate(row.payment_date)}` : 'Pendiente de cobro', row.payment_date ? 'ok' : 'soon')),
-          row.notes ? h('p', { class: 'muted small', style: 'margin-top:4px' }, row.notes) : null,
-          h(
-            'div',
-            { class: 'btn-row', style: 'margin-top:8px' },
-            button('Editar', { small: true, variant: 'ghost', onClick: () => openCertificationSheet(project, rows, render, row) }),
+    chipHost.replaceChildren(rows.length ? (unpaid.length ? chip('Pendiente de cobro', 'soon') : chip('Todo cobrado', 'ok')) : '');
+    summary.replaceChildren(
+      panelValue(rows.length ? fmtMoney(total) : null, 'Sin certificaciones'),
+      panelText(rows.length ? [`${rows.length} ${rows.length === 1 ? 'certificación' : 'certificaciones'}`, unpaid.length ? `${fmtMoney(unpaidTotal)} pendiente de cobro` : 'todo cobrado'].join(' · ') : 'Todavía no se ha certificado nada.'),
+    );
+    fold.set({ summary: `${rows.length} en total`, warn: unpaid.length > 0 });
+    list.replaceChildren(
+      ...rows.map((row) =>
+        record({
+          title: certName(row),
+          aside: chip(row.payment_date ? `Cobrada el ${fmtDate(row.payment_date)}` : 'Pendiente de cobro', row.payment_date ? 'ok' : 'soon'),
+          text: row.notes,
+          meta: `${fmtMoney(row.amount)} · certificada el ${fmtDate(row.cert_date)}`,
+          actions: [
+            linkButton('Editar', 'edit', () => openCertificationSheet(project, rows, render, row)),
             !row.payment_date
-              ? button('Marcar cobrada', { small: true, variant: 'ghost', onClick: async () => {
+              ? linkButton('Cobrada', 'check', async () => {
                   try {
                     Object.assign(row, await updateCertification(row.id, { payment_date: todayISO() }));
                     render();
                   } catch (err) {
                     toast(friendlyError(err), 'error');
                   }
-                } })
+                })
               : null,
-            button('Borrar', { small: true, variant: 'danger', onClick: async () => {
-              if (!(await confirmDialog({ title: '¿Borrar esta certificación?', confirmText: 'Borrar', danger: true }))) return;
-              try {
-                await deleteCertification(row.id);
-                rows.splice(rows.indexOf(row), 1);
-                render();
-              } catch (err) {
-                toast(friendlyError(err), 'error');
-              }
-            } }),
-          ),
-        ),
-      );
-    }
+            deleteLink('esta certificación', () => deleteCertification(row.id), () => { rows.splice(rows.indexOf(row), 1); render(); }),
+          ],
+        }),
+      ),
+    );
   }
   render();
-  card.append(empty, fold.el, h('div', { style: 'margin-top:12px' }, button('Añadir certificación', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openCertificationSheet(project, rows, render) })));
-  return section('Certificaciones', card);
+  return card;
 }
 
 /** Sin `existing`: añade una nueva. Con `existing`: la edita (mismo formulario, precargado). */
 function openCertificationSheet(project, rows, onSaved, existing = null) {
   return openSheet(existing ? 'Editar certificación' : 'Añadir certificación', (close) => {
+    const name = textField('Nombre', 'name', { required: true, value: existing?.name ?? '', placeholder: 'Ej.: Certificación nº 3 – octubre' });
     const date = textField('Fecha', 'cert_date', { type: 'date', required: true, value: existing?.cert_date ?? todayISO() });
     const amount = textField('Importe (€)', 'amount', { type: 'number', inputmode: 'decimal', min: 0, step: '0.01', required: true, value: existing?.amount ?? '' });
     const paid = h('label', { class: 'check' }, h('input', { type: 'checkbox', name: 'paid', checked: Boolean(existing?.payment_date) }), 'Ya está cobrada');
@@ -512,10 +484,10 @@ function openCertificationSheet(project, rows, onSaved, existing = null) {
         onsubmit: async (event) => {
           event.preventDefault();
           const f = readForm(form);
-          if (!f.cert_date || toNum(f.amount) == null) return toast('Rellena la fecha y el importe.', 'error');
+          if (!f.name || !f.cert_date || toNum(f.amount) == null) return toast('Rellena el nombre, la fecha y el importe.', 'error');
           save.disabled = true;
           try {
-            const fields = { cert_date: f.cert_date, amount: toNum(f.amount), payment_date: f.paid ? f.payment_date : null, notes: f.notes };
+            const fields = { name: f.name, cert_date: f.cert_date, amount: toNum(f.amount), payment_date: f.paid ? f.payment_date : null, notes: f.notes };
             if (existing) Object.assign(existing, await updateCertification(existing.id, fields));
             else rows.push(await addCertification(project.id, fields));
             rows.sort((a, b) => (a.cert_date < b.cert_date ? 1 : -1));
@@ -527,6 +499,7 @@ function openCertificationSheet(project, rows, onSaved, existing = null) {
           }
         },
       },
+      name,
       date,
       amount,
       paid,
@@ -557,31 +530,29 @@ const fmtNumber = (n, digits = 2) => Number(n).toLocaleString('es-ES', { maximum
 const round2 = (n) => Math.round(n * 100) / 100;
 
 function expensesCard(project, rows, hours) {
-  const card = h('div', { class: 'card' });
-  const grandTotal = h('div', { style: 'margin-top:16px' });
+  const summary = h('div', {});
   const workersCost = hours.reduce((acc, r) => acc + Number(r.total_cost ?? 0), 0);
-  const renderGrandTotal = () => grandTotal.replaceChildren(h('div', { class: 'muted small' }, 'Gasto total de la obra'), h('div', { class: 'big' }, fmtMoney(sumAmounts(rows) + workersCost)));
+  const renderGrandTotal = () =>
+    summary.replaceChildren(panelValue(fmtMoney(sumAmounts(rows) + workersCost)), panelText('Gasto total de la obra: proveedores, subcontratas, gasoil y horas de los trabajadores.'));
 
   const folds = Object.keys(EXPENSE_CATEGORIES).map((category) => expenseCategoryFold(project, rows, category, renderGrandTotal));
   renderGrandTotal();
-  card.append(...folds, workersFold(hours, workersCost), grandTotal);
-  return section('Gastos', card);
+  return panel('Gastos', null, summary, h('div', { class: 'folds' }, ...folds, workersFold(hours, workersCost)));
 }
 
 /** Trabajadores: coste de las horas apuntadas en esta obra. Solo lectura: se apuntan desde "Horas". */
 function workersFold(hours, workersCost) {
   const unpriced = hours.filter((r) => r.total_cost == null).length;
   const totalHours = hours.reduce((acc, r) => acc + Number(r.hours), 0);
-  const list = h('div', { class: 'stack tight' });
-  if (hours.length === 0) list.append(h('p', { class: 'muted' }, 'Sin horas registradas en esta obra.'));
+  const list = records();
+  if (hours.length === 0) list.append(panelText('Sin horas registradas en esta obra.'));
   for (const r of hours) {
     list.append(
-      h(
-        'div',
-        { class: 'record' },
-        h('div', { class: 'head' }, h('span', { class: 'strong' }, r.worker?.full_name ?? '(trabajador eliminado)'), h('span', { class: 'strong' }, r.total_cost != null ? fmtMoney(r.total_cost) : 'Sin precio')),
-        h('div', { class: 'muted small' }, [fmtDate(r.work_date), fmtHours(r.hours), r.hourly_rate != null ? `${fmtMoney(r.hourly_rate)}/h` : null].filter(Boolean).join(' · ')),
-      ),
+      record({
+        title: r.worker?.full_name ?? '(trabajador eliminado)',
+        aside: r.total_cost != null ? fmtMoney(r.total_cost) : 'Sin precio',
+        meta: [fmtDate(r.work_date), fmtHours(r.hours), r.hourly_rate != null ? `${fmtMoney(r.hourly_rate)}/h` : null].filter(Boolean).join(' · '),
+      }),
     );
   }
   return accordion({
@@ -591,52 +562,36 @@ function workersFold(hours, workersCost) {
     title: 'Trabajadores',
     summary: hours.length ? [`Total: ${fmtMoney(workersCost)}`, fmtHours(totalHours), unpriced ? `${unpriced} sin precio` : null].filter(Boolean).join(' · ') : 'Sin horas',
     warn: unpriced > 0,
-    content: [list, h('p', { class: 'muted small', style: 'margin-top:12px' }, 'Se apuntan desde la pestaña Horas, con el precio por hora de cada trabajador.')],
+    content: [list, h('p', { class: 'panel-text', style: 'margin-top:12px' }, 'Se apuntan desde la pestaña Horas, con el precio por hora de cada trabajador.')],
   }).el;
 }
 
 function expenseCategoryFold(project, rows, category, onChange) {
   const cfg = EXPENSE_CATEGORIES[category];
   const isGasoil = category === 'gasoil';
-  const list = h('div', { class: 'stack tight' });
-  const addButton = button(`Añadir gasto de ${cfg.who}`, { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openExpenseSheet(project, rows, category, render) });
+  const list = records();
+  const addButton = button(`Añadir gasto de ${cfg.who}`, { variant: 'ghost', small: true, block: true, iconName: 'plus', onClick: () => openExpenseSheet(project, rows, category, render) });
   const fold = accordion({ group: 'gastos', sub: true, iconName: cfg.iconName, title: cfg.title, content: [list, h('div', { style: 'margin-top:12px' }, addButton)] });
 
   function render() {
     const mine = rows.filter((r) => r.category === category);
     fold.set({ summary: mine.length ? `Total: ${fmtMoney(sumAmounts(mine))} · ${mine.length} ${mine.length === 1 ? 'gasto' : 'gastos'}` : 'Sin gastos' });
     list.replaceChildren();
-    if (mine.length === 0) list.append(h('p', { class: 'muted' }, 'Sin gastos registrados.'));
+    if (mine.length === 0) list.append(panelText('Sin gastos registrados.'));
     for (const row of mine) {
       list.append(
-        h(
-          'div',
-          { class: 'record' },
-          h('div', { class: 'head' }, h('span', { class: 'strong' }, isGasoil ? fmtDate(row.expense_date) : row.title), h('span', { class: 'strong' }, fmtMoney(row.amount))),
-          h(
-            'div',
-            { class: 'muted small' },
-            isGasoil
-              ? `${fmtNumber(row.km)} km ida y vuelta × ${fmtNumber(row.km_price, 4)} €/km`
-              : [row.provider?.name ?? '(eliminado)', fmtDate(row.expense_date), row.invoice_number ? `factura ${row.invoice_number}` : null].filter(Boolean).join(' · '),
-          ),
-          row.description ? h('p', { class: 'muted small', style: 'margin-top:4px;white-space:pre-wrap' }, row.description) : null,
-          h(
-            'div',
-            { class: 'btn-row', style: 'margin-top:8px' },
-            button('Editar', { small: true, variant: 'ghost', onClick: () => openExpenseSheet(project, rows, category, render, row) }),
-            button('Borrar', { small: true, variant: 'danger', onClick: async () => {
-              if (!(await confirmDialog({ title: '¿Borrar este gasto?', confirmText: 'Borrar', danger: true }))) return;
-              try {
-                await deleteExpense(row.id);
-                rows.splice(rows.indexOf(row), 1);
-                render();
-              } catch (err) {
-                toast(friendlyError(err), 'error');
-              }
-            } }),
-          ),
-        ),
+        record({
+          title: isGasoil ? fmtDate(row.expense_date) : row.title,
+          aside: fmtMoney(row.amount),
+          text: row.description,
+          meta: isGasoil
+            ? `${fmtNumber(row.km)} km ida y vuelta × ${fmtNumber(row.km_price, 4)} €/km`
+            : [row.provider?.name ?? '(eliminado)', fmtDate(row.expense_date), row.invoice_number ? `factura ${row.invoice_number}` : null].filter(Boolean).join(' · '),
+          actions: [
+            linkButton('Editar', 'edit', () => openExpenseSheet(project, rows, category, render, row)),
+            deleteLink('este gasto', () => deleteExpense(row.id), () => { rows.splice(rows.indexOf(row), 1); render(); }),
+          ],
+        }),
       );
     }
     onChange();

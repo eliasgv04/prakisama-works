@@ -2,7 +2,7 @@
 // bancarios), con semáforo, como pedía el usuario — no en contadores de "cuántas cosas activas hay".
 
 import { listAllBankProducts, listBanks, listLatestMedicalCheckups, listPendingCertifications, listWorkers } from '../lib/api.js';
-import { fmtDate, fmtMoney } from '../lib/format.js';
+import { certName, fmtDate, fmtMoney } from '../lib/format.js';
 import { chip, empty, section } from '../ui/components.js';
 import { h, clear } from '../ui/dom.js';
 import { dueStatus } from '../lib/dueStatus.js';
@@ -106,7 +106,7 @@ export default async function dashboard() {
             h(
               'a',
               { class: 'item', href: `#/obras/${c.project_id}` },
-              h('div', { class: 'grow' }, h('div', { class: 'what' }, c.project?.name ?? '—'), h('div', { class: 'muted small' }, `Certificada el ${fmtDate(c.cert_date)}`)),
+              h('div', { class: 'grow' }, h('div', { class: 'what' }, certName(c)), h('div', { class: 'muted small' }, `${c.project?.name ?? '—'} · certificada el ${fmtDate(c.cert_date)}`)),
               h('div', { class: 'strong' }, fmtMoney(c.amount)),
             ),
           ),

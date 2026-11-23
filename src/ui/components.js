@@ -22,6 +22,7 @@ const ICONS = {
   file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
   chevron: '<path d="M6 9l6 6 6-6"/>',
   euro: '<path d="M17 6a6 6 0 1 0 0 12"/><path d="M4 10h9M4 14h9"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
 };
 
 export function icon(name, size) {

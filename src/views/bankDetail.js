@@ -7,9 +7,10 @@ import { dueStatus } from '../lib/dueStatus.js';
 import { friendlyError } from '../lib/errors.js';
 import { fmtDate, fmtMoney } from '../lib/format.js';
 import { navigate } from '../router.js';
-import { button, chip, icon, iconButton, readForm, section, selectField, textField, toNum } from '../ui/components.js';
+import { button, chip, readForm, selectField, textField, toNum } from '../ui/components.js';
+import { actionButton, cardActions, deleteLink, detailHead, linkButton, panel, panelText, panelValue, record, records } from '../ui/panel.js';
 import { avalDateFields, avalDatesText } from '../ui/avalFields.js';
-import { confirmDialog, h, openSheet, toast } from '../ui/dom.js';
+import { h, openSheet, toast } from '../ui/dom.js';
 
 const STATUS_LABEL = { ok: 'Al día', soon: 'Próximo', overdue: 'Vencido' };
 
@@ -17,73 +18,63 @@ export default async function bankDetail({ params }) {
   const [bank, products] = await Promise.all([listBanks().then((all) => all.find((b) => b.id === params.id)), listBankProducts(params.id)]);
   if (!bank) throw new Error('No se encuentra este banco.');
 
-  const node = h('div', { class: 'stack' }, heroCard(bank), productsCard(bank, products));
-  node.append(h('div', { class: 'spacer' }), button('Editar banco', { variant: 'ghost', block: true, iconName: 'edit', onClick: () => navigate(`/bancos/${bank.id}/editar`) }));
-
+  const node = h('div', {}, heroCard(bank), h('div', { class: 'detail-grid' }, productsCard(bank, products)));
   return { title: bank.name, hideTitle: true, back: '/bancos', tab: 'finanzas', node };
 }
 
 function heroCard(bank) {
-  const rows = [['Contacto', bank.contact_name], ['Teléfono', bank.phone], ['Email', bank.email]].filter(([, v]) => v);
-  return h(
-    'div',
-    { class: 'card' },
-    h('div', { class: 'hero' }, h('div', { class: 'thumb' }, icon('euro', 30)), h('div', { class: 'grow' }, h('h2', {}, bank.name), bank.active ? null : chip('De baja', 'neutral')), iconButton('edit', 'Editar banco', () => navigate(`/bancos/${bank.id}/editar`))),
-    rows.length ? h('dl', { class: 'kv', style: 'margin-top:12px' }, rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])) : null,
-    bank.notes ? h('p', { class: 'muted', style: 'margin-top:10px;white-space:pre-wrap' }, bank.notes) : null,
-  );
+  return detailHead({
+    iconName: 'euro',
+    title: bank.name,
+    chip: bank.active ? null : chip('De baja', 'neutral'),
+    editLabel: 'Editar banco',
+    onEdit: () => navigate(`/bancos/${bank.id}/editar`),
+    rows: [['Contacto', bank.contact_name], ['Teléfono', bank.phone], ['Email', bank.email]],
+    notes: bank.notes,
+  });
 }
 
 function productsCard(bank, products) {
-  const card = h('div', { class: 'card' });
-  const list = h('div', { class: 'stack tight' });
+  const value = h('div', {});
+  const list = records();
+  const card = panel('Productos', null, value, list, cardActions(actionButton('Añadir producto', 'plus', () => openProductSheet(bank, products, render), '')));
 
   function render() {
-    list.replaceChildren();
-    if (products.length === 0) list.append(h('p', { class: 'muted' }, 'Sin productos registrados.'));
-    for (const p of products) {
-      const status = dueStatus(p.end_date);
-      list.append(
-        h(
-          'div',
-          { class: 'record' },
-          h('div', { class: 'head' }, h('span', { class: 'strong' }, p.name), status ? chip(STATUS_LABEL[status], status) : null),
-          h(
-            'div',
-            { class: 'muted small' },
-            [p.amount != null ? fmtMoney(p.amount) : null, ...(p.end_date ? avalDatesText(p) : ['sin fecha de finalización']), p.project?.name ? `obra: ${p.project.name}` : null]
-              .filter(Boolean)
-              .join(' · '),
-          ),
-          p.return_requested_date ? h('div', { class: 'muted small' }, `Devolución solicitada el ${fmtDate(p.return_requested_date)}`) : null,
-          p.notes ? h('p', { class: 'muted small', style: 'margin-top:4px' }, p.notes) : null,
-          h(
-            'div',
-            { class: 'btn-row', style: 'margin-top:8px' },
-            button('Editar', { small: true, variant: 'ghost', onClick: () => openProductSheet(bank, products, render, p) }),
-            button('Borrar', {
-              small: true,
-              variant: 'danger',
-              onClick: async () => {
-                if (!(await confirmDialog({ title: '¿Borrar este producto?', confirmText: 'Borrar', danger: true }))) return;
-                try {
-                  await deleteBankProduct(p.id);
-                  products.splice(products.indexOf(p), 1);
-                  render();
-                } catch (err) {
-                  toast(friendlyError(err), 'error');
-                }
-              },
-            }),
-          ),
-        ),
-      );
-    }
+    const overdue = products.filter((p) => dueStatus(p.end_date) === 'overdue').length;
+    const soon = products.filter((p) => dueStatus(p.end_date) === 'soon').length;
+    value.replaceChildren(
+      panelValue(products.length ? `${products.length} ${products.length === 1 ? 'producto' : 'productos'}` : null, 'Sin productos'),
+      panelText(
+        products.length
+          ? [overdue ? `${overdue} vencido${overdue === 1 ? '' : 's'}` : null, soon ? `${soon} próximo${soon === 1 ? '' : 's'} a vencer` : null].filter(Boolean).join(' · ') || 'Todos al día o sin fecha de finalización.'
+          : 'Préstamos, avales, líneas de crédito…',
+      ),
+    );
+    list.replaceChildren(
+      ...products.map((p) => {
+        const status = dueStatus(p.end_date);
+        return record({
+          title: p.name,
+          aside: status ? chip(STATUS_LABEL[status], status) : null,
+          text: p.notes,
+          meta: [
+            p.amount != null ? fmtMoney(p.amount) : null,
+            ...(p.end_date ? avalDatesText(p) : ['sin fecha de finalización']),
+            p.project?.name ? `obra: ${p.project.name}` : null,
+            p.return_requested_date ? `devolución solicitada el ${fmtDate(p.return_requested_date)}` : null,
+          ]
+            .filter(Boolean)
+            .join(' · '),
+          actions: [
+            linkButton('Editar', 'edit', () => openProductSheet(bank, products, render, p)),
+            deleteLink('este producto', () => deleteBankProduct(p.id), () => { products.splice(products.indexOf(p), 1); render(); }),
+          ],
+        });
+      }),
+    );
   }
   render();
-
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir producto', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openProductSheet(bank, products, render) })));
-  return section('Productos', card);
+  return card;
 }
 
 /** Sin `existing`: añade uno nuevo. Con `existing`: lo edita (mismo formulario, precargado). */

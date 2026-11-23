@@ -26,8 +26,9 @@ import { MAX_ATTACHMENT_BYTES, prepareAttachment } from '../lib/image.js';
 import { dueStatus } from '../lib/dueStatus.js';
 import { navigate } from '../router.js';
 import { accordion } from '../ui/accordion.js';
-import { button, chip, icon, iconButton, readForm, section, textField } from '../ui/components.js';
-import { confirmDialog, h, openSheet, toast } from '../ui/dom.js';
+import { button, chip, icon, readForm, textField } from '../ui/components.js';
+import { h, openSheet, toast } from '../ui/dom.js';
+import { actionButton, cardActions, deleteLink, detailHead, linkButton, panel, panelText, panelValue, record, records } from '../ui/panel.js';
 
 const STATUS_LABEL = { ok: 'Al día', soon: 'Próximo', overdue: 'Vencido' };
 
@@ -40,13 +41,15 @@ export default async function workerDetail({ params }) {
   ]);
   if (!worker) throw new Error('No se encuentra este trabajador.');
 
-  const left = h('div', { class: 'col' });
-  const right = h('div', { class: 'col' });
-  const node = h('div', { class: 'detail-grid' }, left, right);
-
-  left.append(heroCard(worker), medicalCard(worker, checkups));
-  right.append(trainingsCard(worker, trainings), vacationsCard(worker, vacations));
-  right.append(h('div', { class: 'spacer' }), button('Editar trabajador', { variant: 'ghost', block: true, iconName: 'edit', onClick: () => navigate(`/trabajadores/${worker.id}/editar`) }));
+  // Por filas: reconocimiento médico | vacaciones, y la formación (que puede ser larga) a todo el ancho.
+  const grid = h(
+    'div',
+    { class: 'detail-grid' },
+    medicalCard(worker, checkups),
+    vacationsCard(worker, vacations),
+    trainingsCard(worker, trainings),
+  );
+  const node = h('div', {}, heroCard(worker), grid);
 
   return { title: worker.full_name, hideTitle: true, wide: true, back: '/trabajadores', tab: 'listas', node };
 }
@@ -54,21 +57,22 @@ export default async function workerDetail({ params }) {
 // ---------------------------------------------------------------------------
 
 function heroCard(worker) {
-  const rows = [
-    ['DNI/NIF', worker.nif],
-    ['Teléfono', worker.phone],
-    ['Categoría', worker.role],
-    ['Nº afiliación S.S.', worker.social_security_number],
-    ['Número de cuenta', worker.account_number],
-    ['Precio por hora', worker.hourly_rate != null ? `${fmtMoney(worker.hourly_rate)}/h` : null],
-  ].filter(([, v]) => v);
-  return h(
-    'div',
-    { class: 'card' },
-    h('div', { class: 'hero' }, h('div', { class: 'thumb' }, icon('users', 30)), h('div', { class: 'grow' }, h('h2', {}, worker.full_name), worker.active ? null : chip('De baja', 'neutral')), iconButton('edit', 'Editar trabajador', () => navigate(`/trabajadores/${worker.id}/editar`))),
-    rows.length ? h('dl', { class: 'kv', style: 'margin-top:12px' }, rows.flatMap(([k, v]) => [h('dt', {}, k), h('dd', {}, v)])) : null,
-    worker.notes ? h('p', { class: 'muted', style: 'margin-top:10px;white-space:pre-wrap' }, worker.notes) : null,
-  );
+  return detailHead({
+    iconName: 'users',
+    title: worker.full_name,
+    chip: worker.active ? null : chip('De baja', 'neutral'),
+    editLabel: 'Editar trabajador',
+    onEdit: () => navigate(`/trabajadores/${worker.id}/editar`),
+    rows: [
+      ['DNI/NIF', worker.nif],
+      ['Teléfono', worker.phone],
+      ['Categoría', worker.role],
+      ['Nº afiliación S.S.', worker.social_security_number],
+      ['Número de cuenta', worker.account_number],
+      ['Precio por hora', worker.hourly_rate != null ? `${fmtMoney(worker.hourly_rate)}/h` : null],
+    ],
+    notes: worker.notes,
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -76,63 +80,45 @@ function heroCard(worker) {
 // ---------------------------------------------------------------------------
 
 function medicalCard(worker, checkups) {
-  const card = h('div', { class: 'card' });
-  const list = h('div', { class: 'stack tight' });
+  const chipHost = h('span', {});
+  const summary = h('div', {});
+  const list = records();
+  const historyTitle = h('div', { class: 'sub-title' }, 'Historial');
+  const card = panel(
+    'Reconocimiento médico',
+    chipHost,
+    summary,
+    historyTitle,
+    list,
+    cardActions(actionButton('Registrar reconocimiento', 'plus', () => openCheckupSheet(worker, checkups, render), '')),
+  );
 
   function render() {
     const latest = checkups[0] ?? null;
     const status = latest ? dueStatus(latest.valid_until) : null;
-    card.querySelector('.medical-summary')?.remove();
-    const summary = h(
-      'div',
-      { class: 'medical-summary' },
-      latest
-        ? h(
-            'div',
-            { style: 'display:flex;justify-content:space-between;align-items:center;gap:8px' },
-            h('div', {}, h('div', { class: 'muted small' }, 'Último reconocimiento'), h('div', { class: 'big' }, fmtDate(latest.checkup_date))),
-            status ? chip(STATUS_LABEL[status], status) : null,
-          )
-        : h('p', { class: 'muted' }, 'Sin reconocimientos registrados.'),
-      latest?.valid_until ? h('p', { class: 'muted small', style: 'margin-top:4px' }, `Vence el ${fmtDate(latest.valid_until)}`) : null,
+    chipHost.replaceChildren(status ? chip(STATUS_LABEL[status], status) : '');
+    summary.replaceChildren(
+      panelValue(latest ? fmtDate(latest.checkup_date) : null, 'Sin datos'),
+      panelText(latest ? (latest.valid_until ? `Último reconocimiento · vence el ${fmtDate(latest.valid_until)}` : 'Último reconocimiento · sin vencimiento') : 'Todavía no se ha registrado ninguno.'),
     );
-    card.prepend(summary);
-
-    list.replaceChildren();
-    for (const c of checkups) {
-      list.append(
-        h(
-          'div',
-          { class: 'record' },
-          h('div', { class: 'head' }, h('span', { class: 'strong' }, fmtDate(c.checkup_date)), h('span', { class: 'muted small' }, c.valid_until ? `hasta ${fmtDate(c.valid_until)}` : 'sin vencimiento')),
-          c.notes ? h('p', { class: 'muted small', style: 'margin-top:4px' }, c.notes) : null,
-          h(
-            'div',
-            { class: 'btn-row', style: 'margin-top:8px' },
-            button('Editar', { small: true, variant: 'ghost', onClick: () => openCheckupSheet(worker, checkups, render, c) }),
-            button('Borrar', {
-              small: true,
-              variant: 'danger',
-              onClick: async () => {
-                if (!(await confirmDialog({ title: '¿Borrar este reconocimiento?', confirmText: 'Borrar', danger: true }))) return;
-                try {
-                  await deleteMedicalCheckup(c.id);
-                  checkups.splice(checkups.indexOf(c), 1);
-                  render();
-                } catch (err) {
-                  toast(friendlyError(err), 'error');
-                }
-              },
-            }),
-          ),
-        ),
-      );
-    }
+    const previous = checkups;
+    historyTitle.hidden = previous.length === 0;
+    list.replaceChildren(
+      ...previous.map((c) =>
+        record({
+          title: fmtDate(c.checkup_date),
+          aside: c.valid_until ? `hasta ${fmtDate(c.valid_until)}` : 'sin vencimiento',
+          text: c.notes,
+          actions: [
+            linkButton('Editar', 'edit', () => openCheckupSheet(worker, checkups, render, c)),
+            deleteLink('este reconocimiento', () => deleteMedicalCheckup(c.id), () => { checkups.splice(checkups.indexOf(c), 1); render(); }),
+          ],
+        }),
+      ),
+    );
   }
   render();
-
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Registrar reconocimiento', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openCheckupSheet(worker, checkups, render) })));
-  return section('Reconocimiento médico', card);
+  return card;
 }
 
 /** Sin `existing`: registra uno nuevo. Con `existing`: lo edita (mismo formulario, precargado). */
@@ -180,49 +166,39 @@ function openCheckupSheet(worker, checkups, onSaved, existing = null) {
 // Plegada por defecto: hay trabajadores (p. ej. administrativas) con muchas formaciones y la lista
 // abierta hacía la ficha larguísima. Cerrada solo enseña cuántas hay y la más reciente.
 function trainingsCard(worker, trainings) {
-  const card = h('div', { class: 'card' });
-  const list = h('div', { class: 'stack tight' });
-  const empty = h('p', { class: 'muted' }, 'Sin formación registrada.');
-  const fold = accordion({ group: 'formacion', iconName: 'file', title: 'Formaciones', content: list });
+  const list = records();
+  const fold = accordion({ group: 'formacion', iconName: 'file', title: 'Ver formaciones', content: list });
+  const summary = h('div', {});
+  const folds = h('div', { class: 'folds' }, fold.el);
+  const card = panel('Formación', null, summary, folds, cardActions(actionButton('Añadir formación', 'plus', () => openTrainingSheet(worker, trainings, render), '')));
+  card.classList.add('full');
 
-  async function render() {
-    empty.hidden = trainings.length > 0;
-    fold.el.hidden = trainings.length === 0;
+  function render() {
+    folds.hidden = trainings.length === 0;
     const latest = trainings[0];
-    fold.set({ summary: latest ? `${trainings.length} en total · última: ${latest.name} (${fmtDate(latest.training_date)})` : '' });
+    summary.replaceChildren(
+      panelValue(trainings.length ? `${trainings.length} ${trainings.length === 1 ? 'curso' : 'cursos'}` : null, 'Sin formación'),
+      panelText(latest ? `Última: ${latest.name} (${fmtDate(latest.training_date)})` : 'Todavía no se ha registrado ninguna.'),
+    );
+    fold.set({ summary: latest ? `${trainings.length} en total` : '' });
     list.replaceChildren();
     for (const t of trainings) {
-      const row = h(
-        'div',
-        { class: 'record' },
-        h('div', { class: 'head' }, h('span', { class: 'strong' }, t.name), h('span', { class: 'muted small' }, fmtDate(t.training_date))),
-        t.notes ? h('p', { class: 'muted small', style: 'margin-top:4px' }, t.notes) : null,
-        h('div', { class: 'attachments' }),
-        h(
-          'div',
-          { class: 'btn-row', style: 'margin-top:8px' },
-          button('Editar', { small: true, variant: 'ghost', onClick: () => openTrainingSheet(worker, trainings, render, t) }),
-          button('Borrar', {
-            small: true,
-            variant: 'danger',
-            onClick: async () => {
-              if (!(await confirmDialog({ title: '¿Borrar esta formación?', message: 'También se borrará su certificado adjunto.', confirmText: 'Borrar', danger: true }))) return;
-              try {
-                await deleteTraining(t.id);
-                trainings.splice(trainings.indexOf(t), 1);
-                render();
-              } catch (err) {
-                toast(friendlyError(err), 'error');
-              }
-            },
-          }),
-        ),
+      const files = h('div', { class: 'attachments' });
+      list.append(
+        record({
+          title: t.name,
+          aside: fmtDate(t.training_date),
+          text: t.notes,
+          extra: files,
+          actions: [
+            linkButton('Editar', 'edit', () => openTrainingSheet(worker, trainings, render, t)),
+            deleteLink('esta formación', () => deleteTraining(t.id), () => { trainings.splice(trainings.indexOf(t), 1); render(); }, { message: 'También se borrará su certificado adjunto.' }),
+          ],
+        }),
       );
-      list.append(row);
-      listTrainingAttachments(t.id).then((files) => {
-        const box = row.querySelector('.attachments');
-        for (const f of files) {
-          box.append(
+      listTrainingAttachments(t.id).then((rows) => {
+        for (const f of rows) {
+          files.append(
             h(
               'a',
               { href: f.url ?? '#', target: '_blank', rel: 'noopener' },
@@ -250,9 +226,7 @@ function trainingsCard(worker, trainings) {
     }
   }
   render();
-
-  card.append(empty, fold.el, h('div', { style: 'margin-top:12px' }, button('Añadir formación', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openTrainingSheet(worker, trainings, render) })));
-  return section('Formación', card);
+  return card;
 }
 
 /** Sin `existing`: añade una nueva. Con `existing`: la edita; el archivo elegido se suma a sus certificados. */
@@ -316,48 +290,44 @@ function openTrainingSheet(worker, trainings, onSaved, existing = null) {
 // ---------------------------------------------------------------------------
 
 function vacationsCard(worker, vacations) {
-  const card = h('div', { class: 'card' });
-  const list = h('div', { class: 'stack tight' });
   const today = todayISO();
+  const chipHost = h('span', {});
+  const summary = h('div', {});
+  const list = records();
+  const card = panel('Vacaciones', chipHost, summary, list, cardActions(actionButton('Añadir periodo', 'plus', () => openVacationSheet(worker, vacations, render), '')));
 
   function render() {
-    list.replaceChildren();
-    if (vacations.length === 0) list.append(h('p', { class: 'muted' }, 'Sin periodos registrados.'));
-    for (const v of vacations) {
-      const current = v.start_date <= today && today <= v.end_date;
-      list.append(
-        h(
-          'div',
-          { class: 'record' },
-          h('div', { class: 'head' }, h('span', { class: 'strong' }, `${fmtDate(v.start_date)} – ${fmtDate(v.end_date)}`), current ? chip('En curso', 'soon') : null),
-          v.notes ? h('p', { class: 'muted small', style: 'margin-top:4px' }, v.notes) : null,
-          h(
-            'div',
-            { class: 'btn-row', style: 'margin-top:8px' },
-            button('Editar', { small: true, variant: 'ghost', onClick: () => openVacationSheet(worker, vacations, render, v) }),
-            button('Borrar', {
-              small: true,
-              variant: 'danger',
-              onClick: async () => {
-                if (!(await confirmDialog({ title: '¿Borrar este periodo?', confirmText: 'Borrar', danger: true }))) return;
-                try {
-                  await deleteVacation(v.id);
-                  vacations.splice(vacations.indexOf(v), 1);
-                  render();
-                } catch (err) {
-                  toast(friendlyError(err), 'error');
-                }
-              },
-            }),
-          ),
-        ),
-      );
-    }
+    const current = vacations.find((v) => v.start_date <= today && today <= v.end_date);
+    const next = [...vacations].filter((v) => v.start_date > today).sort((a, b) => (a.start_date < b.start_date ? -1 : 1))[0];
+    chipHost.replaceChildren(current ? chip('De vacaciones', 'soon') : '');
+    summary.replaceChildren(
+      panelValue(vacations.length ? `${vacations.length} ${vacations.length === 1 ? 'periodo' : 'periodos'}` : null, 'Sin periodos'),
+      panelText(
+        current
+          ? `De vacaciones hasta el ${fmtDate(current.end_date)}.`
+          : next
+            ? `Próximas: del ${fmtDate(next.start_date)} al ${fmtDate(next.end_date)}.`
+            : vacations.length
+              ? 'Sin vacaciones próximas.'
+              : 'Todavía no se ha registrado ninguno.',
+      ),
+    );
+    list.replaceChildren(
+      ...vacations.map((v) =>
+        record({
+          title: `${fmtDate(v.start_date)} – ${fmtDate(v.end_date)}`,
+          aside: v.start_date <= today && today <= v.end_date ? chip('En curso', 'soon') : null,
+          text: v.notes,
+          actions: [
+            linkButton('Editar', 'edit', () => openVacationSheet(worker, vacations, render, v)),
+            deleteLink('este periodo', () => deleteVacation(v.id), () => { vacations.splice(vacations.indexOf(v), 1); render(); }),
+          ],
+        }),
+      ),
+    );
   }
   render();
-
-  card.append(list, h('div', { style: 'margin-top:12px' }, button('Añadir periodo', { variant: 'ghost', block: true, iconName: 'plus', onClick: () => openVacationSheet(worker, vacations, render) })));
-  return section('Vacaciones', card);
+  return card;
 }
 
 function openVacationSheet(worker, vacations, onSaved, existing = null) {
