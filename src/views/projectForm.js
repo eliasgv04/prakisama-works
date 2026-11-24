@@ -335,7 +335,7 @@ function openStagedAvalSheet(banks, list, onAdded, receptionDefault) {
           event.preventDefault();
           const f = readForm(form);
           if (!f.bank_id || !f.name) return toast('Elige el banco y escribe el nombre.', 'error');
-          list.push({ bank_id: f.bank_id, name: f.name, amount: toNum(f.amount), ...dates.read(), return_requested_date: f.return_requested_date, notes: f.notes });
+          list.push({ kind: 'aval', bank_id: f.bank_id, name: f.name, amount: toNum(f.amount), ...dates.read(), return_requested_date: f.return_requested_date, notes: f.notes });
           onAdded();
           close(true);
         },

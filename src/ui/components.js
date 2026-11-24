@@ -21,8 +21,10 @@ const ICONS = {
   check: '<path d="M5 13l4 4L19 7"/>',
   file: '<path d="M6 3h8l4 4v14H6z"/><path d="M14 3v4h4"/>',
   chevron: '<path d="M6 9l6 6 6-6"/>',
-  euro: '<path d="M17 6a6 6 0 1 0 0 12"/><path d="M4 10h9M4 14h9"/>',
+  // Euro centrado en el cuadro de 24: la «C» va de x≈7 a 19 y las rayas de 5 a 14, así el conjunto ocupa 5–19 (centro 12).
+  euro: '<path d="M19 7a7 7 0 1 0 0 10"/><path d="M5 10h9M5 14h9"/>',
   trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  shield: '<path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/><path d="M9 12l2 2 4-4"/>',
 };
 
 export function icon(name, size) {

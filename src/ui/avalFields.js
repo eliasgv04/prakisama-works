@@ -17,7 +17,7 @@ import { h } from './dom.js';
  * - `manualEnd`: en la ficha del banco hay productos que no son avales (préstamos...) y necesitan
  *   poner la fecha de fin a mano; ahí se enseña ese campo y se bloquea cuando hay recepción + duración.
  */
-export function avalDateFields(existing = null, { receptionDefault = '', manualEnd = false } = {}) {
+export function avalDateFields(existing = null, { receptionDefault = '', manualEnd = false, endLabel = 'Fecha de finalización (opcional)', endHint = 'Si es un aval, mejor rellena la recepción y la duración y se calcula sola. Entra en el semáforo.' } = {}) {
   const months = existing?.guarantee_months ?? null;
   const inYears = months != null && months % 12 === 0;
 
@@ -41,7 +41,7 @@ export function avalDateFields(existing = null, { receptionDefault = '', manualE
   let endInput = null;
   let endField;
   if (manualEnd) {
-    endField = textField('Fecha de finalización (opcional)', 'end_date', { type: 'date', value: existing?.end_date ?? '', hint: 'Si es un aval, mejor rellena la recepción y la duración y se calcula sola. Entra en el semáforo.' });
+    endField = textField(endLabel, 'end_date', { type: 'date', value: existing?.end_date ?? '', hint: endHint });
     endInput = endField.querySelector('input');
   } else {
     endField = h('div', { class: 'field' }, h('span', { class: 'field-label' }, 'Fin de la garantía (calculado)'), h('div', { class: 'strong' }));

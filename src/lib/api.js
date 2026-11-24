@@ -97,9 +97,9 @@ export async function deleteBankProduct(id) {
   if (deleted.length === 0) throw new Error('No tienes permiso para borrar esto.');
 }
 
-/** Todos los productos (banco, obra vinculada, fecha de fin), para el semáforo de bancos y el panel. */
+/** Todos los productos (con la obra vinculada), para el semáforo de bancos y el panel (avales y financiación). */
 export async function listAllBankProducts() {
-  return orThrow(await supabase.from('bank_products').select('id, bank_id, name, end_date, project_id, project:projects(id,name,active)'));
+  return orThrow(await supabase.from('bank_products').select('*, project:projects(id,name,active)'));
 }
 
 /** Productos (avales, normalmente) vinculados a una obra concreta. */

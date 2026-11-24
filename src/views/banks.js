@@ -2,7 +2,8 @@
 // fecha de finalización).
 
 import { listAllBankProducts, listBanks } from '../lib/api.js';
-import { dueStatus, worstDueStatus } from '../lib/dueStatus.js';
+import { worstDueStatus } from '../lib/dueStatus.js';
+import { productDueStatus } from '../lib/loans.js';
 import { chip, empty, icon } from '../ui/components.js';
 import { h } from '../ui/dom.js';
 
@@ -12,7 +13,7 @@ export default async function banksList() {
   const [all, products] = await Promise.all([listBanks(), listAllBankProducts()]);
   const statusByBank = new Map();
   for (const p of products) {
-    const status = dueStatus(p.end_date);
+    const status = productDueStatus(p);
     if (!status) continue;
     statusByBank.set(p.bank_id, worstDueStatus([statusByBank.get(p.bank_id), status]));
   }

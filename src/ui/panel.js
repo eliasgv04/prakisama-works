@@ -31,7 +31,7 @@ export const facts = (rows) => {
 };
 
 /** Cabecera de la ficha a todo el ancho: icono, nombre, estado, botón de editar y datos. */
-export const detailHead = ({ iconName, title, chip, onEdit, editLabel, rows, notes }) =>
+export const detailHead = ({ iconName, title, chip, onEdit, editLabel, rows, notes, extra }) =>
   h(
     'div',
     { class: 'card detail-head' },
@@ -40,7 +40,7 @@ export const detailHead = ({ iconName, title, chip, onEdit, editLabel, rows, not
       { class: 'hero' },
       h('div', { class: 'thumb' }, icon(iconName, 30)),
       h('div', { class: 'grow' }, h('h2', {}, title), chip ? h('div', { style: 'margin-top:8px' }, chip) : null),
-      onEdit ? button(editLabel, { small: true, variant: 'ghost', iconName: 'edit', onClick: onEdit }) : null,
+      h('div', { class: 'head-actions' }, extra ?? null, onEdit ? button(editLabel, { small: true, variant: 'ghost', iconName: 'edit', onClick: onEdit }) : null),
     ),
     facts(rows),
     notes ? h('p', { class: 'notes' }, notes) : null,
@@ -78,3 +78,12 @@ export const deleteLink = (what, action, onDone, { label = 'Borrar', message } =
       toast(friendlyError(err), 'error');
     }
   }, true);
+
+/** Barra de progreso (0–1) con un texto a cada lado debajo. */
+export const progressBar = (fraction, left, right) =>
+  h(
+    'div',
+    { class: 'progress-wrap' },
+    h('div', { class: 'progress', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': '100', 'aria-valuenow': String(Math.round(fraction * 100)) }, h('span', { style: `width:${(Math.max(0, Math.min(1, fraction)) * 100).toFixed(1)}%` })),
+    h('div', { class: 'progress-legend' }, h('span', {}, left), h('span', {}, right ?? '')),
+  );

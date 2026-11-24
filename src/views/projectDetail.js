@@ -24,7 +24,7 @@ import {
   updateExpense,
   updateProjectProvider,
 } from '../lib/api.js';
-import { dueStatus } from '../lib/dueStatus.js';
+import { productDueStatus } from '../lib/loans.js';
 import { friendlyError } from '../lib/errors.js';
 import { certName, fmtDate, fmtHours, fmtMoney, fmtPeriod } from '../lib/format.js';
 import { todayISO } from '../lib/dates.js';
@@ -206,7 +206,7 @@ function avalCard(project, avales, banks, receptionDefault) {
   const card = panel('Aval', chipHost, summary, list, cardActions(actionButton('Añadir aval', 'plus', () => openAvalSheet(project, banks, avales, render, receptionDefault), '')));
 
   function render() {
-    const statuses = avales.map((a) => dueStatus(a.end_date)).filter(Boolean);
+    const statuses = avales.map((a) => productDueStatus(a)).filter(Boolean);
     const worst = ['overdue', 'soon', 'ok'].find((s) => statuses.includes(s));
     const total = avales.reduce((acc, a) => acc + Number(a.amount ?? 0), 0);
     chipHost.replaceChildren(worst ? chip(AVAL_STATUS_LABEL[worst], worst) : '');
@@ -216,7 +216,7 @@ function avalCard(project, avales, banks, receptionDefault) {
     );
     list.replaceChildren(
       ...avales.map((a) => {
-        const status = dueStatus(a.end_date);
+        const status = productDueStatus(a);
         return record({
           title: a.name,
           aside: status ? chip(AVAL_STATUS_LABEL[status], status) : null,
@@ -256,7 +256,7 @@ function openAvalSheet(project, banks, avales, onSaved, receptionDefault, existi
           if (!f.bank_id || !f.name) return toast('Elige el banco y escribe el nombre.', 'error');
           save.disabled = true;
           try {
-            const fields = { bank_id: f.bank_id, name: f.name, amount: toNum(f.amount), ...dates.read(), return_requested_date: f.return_requested_date, notes: f.notes, project_id: project.id };
+            const fields = { kind: 'aval', external_project: null, bank_id: f.bank_id, name: f.name, amount: toNum(f.amount), ...dates.read(), return_requested_date: f.return_requested_date, notes: f.notes, project_id: project.id };
             if (existing) {
               Object.assign(existing, await updateBankProduct(existing.id, fields));
             } else {
